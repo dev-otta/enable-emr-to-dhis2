@@ -1,0 +1,18 @@
+{
+  "patientId": 100000000,
+  "birthDate": "1997-03-30",
+  "phoneNumber": "251111111111",
+  "facilityCode": "1057888",
+  "dateOfFirstVisit": "2026-07-30",
+  "lnmp": "2026-06-01",
+  "edd": "2027-03-01",
+  "visits": [
+    {
+      "encounterId": 1,
+      "encounterDate": "2026-08-31",
+      "visitNumber": 1,
+      "gestationalAge": 8,
+      "nextDate": "2026-09-30"
+    }
+  ]
+}

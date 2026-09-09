@@ -1,0 +1,50 @@
+/* PulseTech ANC record: structural validation rules.
+   Datastore key: enable-emr-validation/pulsetech. Evaluated per record, before
+   the mapping. Structural checks only: the data model
+   itself (mandatory attributes, value types, ranges) is enforced by DHIS2.
+
+   Input:  body — one PulseTech record.
+   Output: { valid: boolean, missingFields: [string] }
+   valid=false becomes an HTTP 400 listing missingFields verbatim.
+
+   Each rule is one row in a table. To add a rule, add a row. */
+
+/* ---- helpers ----------------------------------------------------------- */
+local rec = if std.isObject(body) then body else {};
+// reads a field from an object, or null when the object or field is missing
+local get(o, f) = if std.isObject(o) && std.objectHas(o, f) then o[f] else null;
+// a value counts as present unless it is null or a blank string
+local present(v) = v != null && !(std.isString(v) && std.length(std.stripChars(v, ' \t')) == 0);
+// the follow-up entries, ignoring anything that is not an object
+local followups = local f = get(rec, 'anc_followup');
+                  if std.isArray(f) then [x for x in f if std.isObject(x)] else [];
+
+/* ---- record-level rules -------------------------------------------------- */
+// names (pnt_fname, pnt_mname, pnt_lname) are optional: mapped when sent, dropped when not
+local recordRules = [
+  { field: f, ok: present(get(rec, f)) }
+  for f in [
+    'pnt_mrn', 'pnt_date_birth', 'pnt_phone',
+    'facility_dhis2_org_unit_code',
+  ]
+];
+
+/* ---- per-follow-up rules -------------------------------------------------- */
+local followupRules =
+  if std.length(followups) == 0 then [{ field: 'anc_followup (at least one entry)', ok: false }]
+  else std.flattenArrays([
+    [
+      { field: 'anc_followup[%d].%s' % [i, f], ok: present(get(followups[i], f)) }
+      for f in ['followup_date', 'lmp_date', 'edd', 'ga', 'visit_number']
+    ]
+    for i in std.range(0, std.length(followups) - 1)
+  ]);
+
+/* ---- verdict ------------------------------------------------------------ */
+local missing = [r.field for r in recordRules + followupRules if !r.ok];
+{
+  valid: std.length(missing) == 0,
+  missingFields: missing,
+  // who the verdict is about; surfaces in the 400 (null when the id is missing)
+  mrn: if present(get(rec, 'pnt_mrn')) then std.toString(get(rec, 'pnt_mrn')) else null,
+}

@@ -1,0 +1,6 @@
+.env
+node_modules/
+mediator/target/
+playwright-report/
+test-results/
+.DS_Store

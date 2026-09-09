@@ -1,0 +1,54 @@
+/* Bahmni ANC record — structural validation rules.
+   Datastore key: enable-emr-validation/bahmni. Evaluated per woman, before the mapping.
+
+   Input:  one per-woman record (see emr-mocks/bahmni/anc-record.json);
+           may be arbitrarily malformed, so every access is guarded.
+   Output: { valid: boolean, missingFields: [string] }
+   valid=false becomes an HTTP 400 (single) / an invalid entry (batch), listing
+   missingFields verbatim.
+
+   Configuration: Each rule is one row in a table. To add a rule, add a row. */
+
+/* ---- helpers ----------------------------------------------------------- */
+local rec = if std.isObject(body) then body else {};
+// reads a field from an object, or null when the object or field is missing
+local get(o, f) = if std.isObject(o) && std.objectHas(o, f) then o[f] else null;
+// a value counts as present unless it is null or a blank string
+local present(v) = v != null && !(std.isString(v) && std.length(std.stripChars(v, ' \t')) == 0);
+
+local visits = local v = get(rec, 'visits');
+               if std.isArray(v) then [x for x in v if std.isObject(x)] else [];
+local hasVisitOne = std.length([v for v in visits if get(v, 'visitNumber') == 1]) > 0;
+
+/* ---- record-level rules (policy decisions are visible as rows) --------- */
+local recordRules = [
+  { field: 'patientId',    ok: present(get(rec, 'patientId')) },
+  { field: 'birthDate',    ok: present(get(rec, 'birthDate')) },
+  { field: 'facilityCode', ok: present(get(rec, 'facilityCode')) },
+  { field: 'phoneNumber',  ok: present(get(rec, 'phoneNumber')) },   // the SMS programme depends on it
+  // lnmp/edd/GA feed the profile, which is only built with visit 1
+  { field: 'lnmp (required with visit 1)', ok: !hasVisitOne || present(get(rec, 'lnmp')) },
+  { field: 'edd (required with visit 1)',  ok: !hasVisitOne || present(get(rec, 'edd')) },
+  { field: 'visits[].gestationalAge (required on visit 1)',
+    ok: std.length([v for v in visits if get(v, 'visitNumber') == 1 && !present(get(v, 'gestationalAge'))]) == 0 },
+];
+
+/* ---- per-visit rules ---------------------------------------------------- */
+local visitRules =
+  if std.length(visits) == 0 then [{ field: 'visits (at least one encounter)', ok: false }]
+  else std.flattenArrays([
+    [
+      { field: 'visits[%d].encounterDate' % i, ok: present(get(visits[i], 'encounterDate')) },
+      { field: 'visits[%d].visitNumber' % i,   ok: std.isNumber(get(visits[i], 'visitNumber')) },
+    ]
+    for i in std.range(0, std.length(visits) - 1)
+  ]);
+
+/* ---- verdict ------------------------------------------------------------ */
+local missing = [r.field for r in recordRules + visitRules if !r.ok];
+{
+  valid: std.length(missing) == 0,
+  missingFields: missing,
+  // who the verdict is about; surfaces in the 400 (null when the id is missing)
+  mrn: if present(get(rec, 'patientId')) then std.toString(get(rec, 'patientId')) else null,
+}

@@ -1,0 +1,138 @@
+# TWO parameterized endpoints serve every EMR source:
+#
+#   POST /api/{source}/anc-record     one woman's record (site key required)
+#   POST /api/{source}/anc-records    a batch — a bare array or {"records":[...]};
+#                                     entries are independent and get per-entry
+#                                     results (200 all-ok / 207 mixed)
+#   GET  /api/health                  (public)
+#
+# Guardrails on the way in (before any EMR data is parsed):
+#   - request size cap        -> 413 (servlet filter; MEDIATOR_MAX_REQUEST_BYTES,
+#                                the batch path gets MEDIATOR_BATCH_MAX_REQUEST_BYTES)
+#   - site API key + role     -> 401/403 (Spring Security, built from api.keys)
+#   - throttle                -> 429 (mediator.throttle.*, protects DHIS2 behind;
+#                                the batch route has its own throttle instance)
+#   - batch envelope + entry cap -> 400 (MEDIATOR_BATCH_MAX_RECORDS)
+#
+# Error contract (routeConfiguration below; responses rendered by the
+# processors in org.hisp.dhis.integration.emr.route):
+#   400  invalid payload / bad batch envelope — names what is wrong
+#        based on rules from the datastore: {{datastore.validation-namespace}}/<source>)
+#   401  unknown API key          403  no key / wrong site's key / disabled source
+#   409  DHIS2 rejected the import (its report passed through, covers
+#        unresolvable org-unit codes, mandatory attributes, program rules)
+#   413  request too large        429  too many requests
+#   207  batch with mixed outcomes (per-entry statuses in the body)
+#   502  DHIS2 unreachable or failing
+
+# Handlers for exceptions thrown by the receive routes' own steps (the batch
+# envelope gate's 400, the throttle's 429). Route-scoped onException only sees
+# same-route exceptions — anything thrown inside the shared core is caught by
+# the doTry/doCatch in the ingest routes (emr-to-dhis2.camel.yaml), which
+# render 400/409/502 (single) or per-entry result rows (batch).
+- routeConfiguration:
+    id: http-error-contract
+    onException:
+      - onException:
+          exception:
+            - org.hisp.dhis.integration.emr.route.InvalidEmrPayloadException
+          handled:
+            constant: "true"
+          steps:
+            - process:
+                ref: invalidPayloadResponse
+      - onException:
+          exception:
+            - org.apache.camel.processor.ThrottlerRejectedExecutionException
+          handled:
+            constant: "true"
+          steps:
+            - log:
+                message: "Throttle rejected a push from source '${header.source}'"
+                loggingLevel: WARN
+            - setHeader:
+                name: CamelHttpResponseCode
+                constant: "429"
+            - setHeader:
+                name: Content-Type
+                constant: application/json
+            - setBody:
+                constant: '{"status":"ERROR","error":"Too many requests — retry later"}'
+
+- route:
+    id: health-route
+    from:
+      uri: "platform-http:/api/health"
+      steps:
+        - setHeader:
+            name: Content-Type
+            constant: application/json
+        - setBody:
+            constant: '{"status":"OK","service":"enable-emr-json-dhis2-mediator"}'
+
+
+- restConfiguration:
+    component: platform-http
+
+- rest:
+    id: emr-ingest-rest
+    post:
+      - id: anc-record-endpoint
+        path: "/api/{source}/anc-record"
+        consumes: application/json
+        produces: application/json
+        to: direct:receivePush
+      - id: anc-records-batch-endpoint
+        path: "/api/{source}/anc-records"
+        consumes: application/json
+        produces: application/json
+        to: direct:receiveBatchPush
+
+- route:
+    id: receive-push-route
+    routeConfigurationId: http-error-contract
+    from:
+      uri: direct:receivePush
+      steps:
+        - log: "Received ANC record push from source '${header.source}'"
+        - throttle:
+            description: Throttle requests to protect the DHIS2 instance.
+            expression:
+              constant: "{{mediator.throttle.max-requests}}"
+            timePeriodMillis: "{{mediator.throttle.period-millis}}"
+            rejectExecution: true
+        - unmarshal:
+            description: Parse the inbound JSON into a Map
+            json: {}
+        - setVariable:
+            description: The path parameter names the source; security guaranteed its key matches this exact source
+            name: source
+            expression:
+              simple: "${header.source}"
+        - to: direct:ingestAncRecord
+
+- route:
+    id: receive-batch-push-route
+    routeConfigurationId: http-error-contract
+    from:
+      uri: direct:receiveBatchPush
+      steps:
+        - log: "Received ANC batch push from source '${header.source}'"
+        - unmarshal:
+            description: Parse the inbound JSON envelope into a Map
+            json: {}
+        - process:
+            description: Cheap pre-gate (bare array or {"records":[...]}, entry cap) -> body becomes the raw entry list
+            ref: batchEnvelopeGate
+        - throttle:
+            description: One batch counts as one request against this route's own throttle
+            expression:
+              constant: "{{mediator.throttle.max-requests}}"
+            timePeriodMillis: "{{mediator.throttle.period-millis}}"
+            rejectExecution: true
+        - setVariable:
+            description: The path parameter names the source; security guaranteed its key matches this exact source
+            name: source
+            expression:
+              simple: "${header.source}"
+        - to: direct:ingestAncBatch

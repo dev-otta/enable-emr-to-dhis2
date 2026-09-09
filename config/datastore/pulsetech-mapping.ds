@@ -1,0 +1,105 @@
+/* PulseTech ANC record -> DHIS2 tracker payload.
+   Datastore key: enable-emr-mapping/pulsetech. a pure function of one record.
+
+   mediator looks the woman up by MRN + program after mapping and injects her
+   existing UIDs so a re-push updates instead of duplicating. */
+
+/* ---- DHIS2 metadata ----------------------------------------------------- */
+local PROGRAM = 'WSGAb5XwJ3Y';              // ANC - RMNCAH - Antenatal care registry
+local TRACKED_ENTITY_TYPE = 'MCPQUTHX1Ze';  // Person
+local STAGE = {
+  profile: 'iF5roNU7QWm',  // Woman's Profile and History (NON-repeatable)
+  exam: 'JqW7c9HYjVr',     // ANC Examination (repeatable)
+};
+local ATTRIBUTE = {
+  mrn: 'OYuDdqr2MvX',              // Client MRN (unique — the identity key)
+  firstName: 'sB1IHYu2xQT',        // optional
+  fathersName: 'ZtQqOYot5ut',      // optional 
+  grandfathersName: 'ENRjVGxVL6l', // optional
+  dateOfBirth: 'Fgf497oYvSC',
+  phone: 'RJxLa3nITB3',            // SMS phone number
+};
+local DATA_ELEMENT = {
+  lnmp: 'w4ky6EkVahL',
+  edd: 'Ru01omP2WCQ',
+  gestationalAge: 'w9p8MQDRyMr',  // INTEGER_POSITIVE, compulsory on the profile
+  gaSource: 'RPSgZF1i0hk',        // option set: Clinical | LMP | Ultrasound
+  visitNumber: 'bXVD2EMF7UW',     // ANC Visit Number — the event MERGE KEY
+};
+
+/* ---- helpers ------------------------------------------------------------- */
+local attribute(uid, value) = { attribute: uid, value: value };
+local dataValue(uid, value) = { dataElement: uid, value: value };
+// an attribute that is only included when the source sent a value
+local optionalAttribute(uid, value) = if value == null then [] else [attribute(uid, value)];
+
+/* "Visit 3" -> 3 (tolerates a bare number too) */
+local visitNo(raw) =
+  if std.isNumber(raw) then raw
+  else (
+    local parts = std.split(std.toString(raw), ' ');
+    std.parseInt(parts[std.length(parts) - 1])
+  );
+
+/* ---- the record ----------------------------------------------------------- */
+local rec = body;
+// reads a field from the record, or null when it is missing
+local field(name) = if std.objectHas(rec, name) then rec[name] else null;
+local orgUnit = rec.facility_dhis2_org_unit_code;
+local followups = std.sort(rec.anc_followup, function(f) f.followup_date);
+local first = followups[0];  // the registration visit anchors the enrollment
+
+/* ---- events ---------------------------------------------------------------- */
+/* captured contacts are COMPLETED, dated the day they happened (PulseTech is missing a
+  scheduled-visit concept. For now, every event it sends is marked as completed). */
+local profileEvent = {
+  programStage: STAGE.profile,
+  orgUnit: orgUnit,
+  occurredAt: first.followup_date,
+  status: 'COMPLETED',
+  completedAt: first.followup_date,
+  dataValues: [
+    dataValue(DATA_ELEMENT.lnmp, first.lmp_date),
+    dataValue(DATA_ELEMENT.edd, first.edd),
+    dataValue(DATA_ELEMENT.gestationalAge, std.parseInt(first.ga)),
+    dataValue(DATA_ELEMENT.gaSource, 'LMP'),
+  ],
+};
+
+local examEvent(f) = {
+  programStage: STAGE.exam,
+  orgUnit: orgUnit,
+  occurredAt: f.followup_date,
+  status: 'COMPLETED',
+  completedAt: f.followup_date,
+  dataValues: [dataValue(DATA_ELEMENT.visitNumber, visitNo(f.visit_number))],
+};
+
+/* ---- the tracker payload ---------------------------------------------------- */
+{
+  trackedEntities: [
+    {
+      trackedEntityType: TRACKED_ENTITY_TYPE,
+      orgUnit: orgUnit,
+      attributes: [
+        attribute(ATTRIBUTE.mrn, rec.pnt_mrn),
+        attribute(ATTRIBUTE.dateOfBirth, rec.pnt_date_birth),
+        attribute(ATTRIBUTE.phone, rec.pnt_phone),
+      ]
+      // names are optional: mapped when the export includes them, dropped when not
+      + optionalAttribute(ATTRIBUTE.firstName, field('pnt_fname'))
+      + optionalAttribute(ATTRIBUTE.fathersName, field('pnt_mname'))
+      + optionalAttribute(ATTRIBUTE.grandfathersName, field('pnt_lname')),
+      enrollments: [
+        {
+          program: PROGRAM,
+          orgUnit: orgUnit,
+          enrolledAt: first.followup_date,
+          occurredAt: first.followup_date,
+          status: 'ACTIVE',
+          events: [profileEvent] + [examEvent(f) for f in followups],
+        },
+      ],
+    },
+  ],
+}

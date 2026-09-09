@@ -1,0 +1,101 @@
+# Mediator configuration. Every value here is an environment-variable knob
+# with a sensible default — deployments change the environment (.env), not
+# this file. docs/REFERENCE.md §4 documents every knob.
+
+server:
+  port: 9070
+  address: 0.0.0.0
+  # HTTPS on the ingest endpoints. Default keystore is the self-signed cert
+  # generated in the Docker image (demo only). For a real deployment either
+  # mount a proper keystore and point MEDIATOR_KEYSTORE_PATH at it, or set
+  # MEDIATOR_TLS_ENABLED=false when a reverse proxy in front of the mediator
+  # terminates TLS (see docs/REFERENCE.md §6).
+  ssl:
+    enabled: ${MEDIATOR_TLS_ENABLED:true}
+    key-store: ${MEDIATOR_KEYSTORE_PATH:file:/keystore.p12}
+    key-store-type: PKCS12
+    key-store-password: ${MEDIATOR_KEYSTORE_PASSWORD:changeit}
+    key-alias: ${MEDIATOR_KEYSTORE_ALIAS:mediator}
+  tomcat:
+    # Backstop for requests without a declared Content-Length; the primary caps
+    # are in the RequestSizeLimitFilter (mediator.max-request-bytes per record,
+    # mediator.batch.max-request-bytes for the batch path) — this container-level
+    # ceiling must admit the largest of them.
+    max-swallow-size: ${MEDIATOR_BATCH_MAX_REQUEST_BYTES:20971520}
+
+camel:
+  springboot:
+    main-run-controller: true
+    routes-include-pattern: "classpath:camel/*.camel.yaml"
+  dataformat:
+    json-jackson:
+      auto-discover-object-mapper: true
+
+# The source registry: one API key per EMR site (the IG transport rule). A
+# source with a key EXISTS (endpoint + security rule + datastore expressions);
+# a source with a blank key does not. For the POC only PulseTech is enabled —
+# Bahmni switches on the day its key is set. Additional sources need no code:
+# any API_KEYS_<SOURCE> environment variable binds into this map (Spring
+# relaxed binding). Fail-fast rules in DefaultSecurityConfig: at least one
+# source enabled, no placeholder/short keys, no shared keys.
+api:
+  keys:
+    pulsetech: ${MEDIATOR_API_KEY_PULSETECH:}
+    bahmni: ${MEDIATOR_API_KEY_BAHMNI:}
+
+# Ingest guardrails (see docs/REFERENCE.md §4).
+mediator:
+  # Hard cap on inbound request size — an ANC record is a few kilobytes.
+  max-request-bytes: ${MEDIATOR_MAX_REQUEST_BYTES:1048576}
+  # Throttle across the ingest endpoint: at most max-requests per period.
+  # Protects the DHIS2 instance sitting behind the mediator from bursts;
+  # rejected requests get 429 and should be retried by the EMR.
+  # (The batch endpoint has its own throttle instance with the same knobs —
+  # one batch counts as one request; its entries run sequentially inside it.)
+  throttle:
+    max-requests: ${MEDIATOR_THROTTLE_MAX_REQUESTS:10}
+    period-millis: ${MEDIATOR_THROTTLE_PERIOD_MILLIS:1000}
+  # Batch ingestion (POST /api/{source}/anc-records — e.g. Bahmni's bulk push):
+  # entry cap per request and a larger size cap for that path only.
+  batch:
+    max-records: ${MEDIATOR_BATCH_MAX_RECORDS:1000}
+    max-request-bytes: ${MEDIATOR_BATCH_MAX_REQUEST_BYTES:20971520}
+
+# DHIS2 connection (injected from docker-compose / the environment). Use the
+# least-privilege service account (docs/REFERENCE.md §6), not admin, for anything
+# beyond a local demo.
+dhis2:
+  api-url: ${DHIS2_API_URL:http://localhost:8080/api}
+  username: ${DHIS2_USERNAME:admin}
+  password: ${DHIS2_PASSWORD:district}
+  # Tracker import knobs. async=false forces a synchronous import so the caller
+  # gets the real report; orgUnitIdScheme=CODE makes DHIS2 resolve the facility
+  # org-unit CODEs the mappings pass through (nothing is looked up in the
+  # mediator).
+  import:
+    async: ${DHIS2_IMPORT_ASYNC:false}
+    report-mode: ${DHIS2_IMPORT_REPORT_MODE:FULL}
+    org-unit-id-scheme: ${DHIS2_IMPORT_ORG_UNIT_ID_SCHEME:CODE}
+    # Program rules are for humans in the Capture UI (where they still run).
+    # Executing them against machine imports adds nothing and BREAKS them: the
+    # package's "Calculate Age" ASSIGN gets injected into the enrollment by the
+    # rule engine and then rejected by DHIS2's own validation (E1019). The
+    # package has NO message-sending rule actions, so skipping rules on import
+    # cannot affect the SMS programme (which runs off program notifications).
+    skip-rule-engine: ${DHIS2_IMPORT_SKIP_RULE_ENGINE:true}
+  # Idempotency by lookup: the mediator never generates UIDs — before every import
+  # it asks the tracker API whether a tracked entity with the record's MRN already
+  # exists in the payload's program, and injects the existing UIDs on a hit.
+  tracker:
+    # The tracked-entity attribute that carries the source MRN (unique in the program).
+    identity-attribute: ${DHIS2_TRACKER_IDENTITY_ATTRIBUTE:OYuDdqr2MvX}
+    # The data element that identifies "the same visit" across pushes (ANC visit
+    # number) — how a planned (SCHEDULE) event is updated by a later finished push.
+    event-match-data-element: ${DHIS2_TRACKER_EVENT_MATCH_DATA_ELEMENT:bXVD2EMF7UW}
+
+# Where the per-source DataSonnet expressions live in the DHIS2 datastore. The
+# key inside each namespace is the source name (pulsetech, bahmni, ...).
+datastore:
+  envelope-namespace: ${DATASTORE_ENVELOPE_NAMESPACE:enable-emr-envelope}
+  validation-namespace: ${DATASTORE_VALIDATION_NAMESPACE:enable-emr-validation}
+  mapping-namespace: ${DATASTORE_MAPPING_NAMESPACE:enable-emr-mapping}

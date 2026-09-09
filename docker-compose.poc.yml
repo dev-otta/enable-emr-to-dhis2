@@ -1,0 +1,53 @@
+# ENABLE — POC deployment: MEDIATOR ONLY, in front of an EXISTING DHIS2.
+#
+# For the Addis server (or any environment where DHIS2 already runs), the demo
+# stack in docker-compose.yml is wrong — you don't want a second DHIS2. This
+# file runs just the mediator, pointed at the real instance:
+#
+#   docker compose -f docker-compose.poc.yml up --build -d
+#
+# Prerequisites, seeding of the datastore expressions, TLS, and the full
+# go-live checklist: docs/REFERENCE.md §6. Do NOT expose the DHIS2 instance to
+# the EMRs — only the mediator's port should be reachable from outside.
+
+services:
+  mediator:
+    build: ./mediator
+    restart: always
+    environment:
+      # ---- source registry (PulseTech is the POC pipeline) ----
+      MEDIATOR_API_KEY_PULSETECH: ${MEDIATOR_API_KEY_PULSETECH:?Set MEDIATOR_API_KEY_PULSETECH in .env}
+      MEDIATOR_API_KEY_BAHMNI: ${MEDIATOR_API_KEY_BAHMNI:-}
+
+      # ---- the existing DHIS2 this mediator sits in front of ----
+      # e.g. https://<host>/api — reachable FROM this container (for a DHIS2 on
+      # the same machine outside Docker, host.docker.internal or the host IP).
+      DHIS2_API_URL: ${DHIS2_API_URL:?Set DHIS2_API_URL to the target DHIS2 /api}
+      # The least-privilege service account (docs/REFERENCE.md §6) — never admin here.
+      DHIS2_USERNAME: ${MEDIATOR_DHIS2_USERNAME:?Set MEDIATOR_DHIS2_USERNAME}
+      DHIS2_PASSWORD: ${MEDIATOR_DHIS2_PASSWORD:?Set MEDIATOR_DHIS2_PASSWORD}
+
+      # ---- guardrails (defaults apply if unset) ----
+      MEDIATOR_MAX_REQUEST_BYTES: ${MEDIATOR_MAX_REQUEST_BYTES:-1048576}
+      MEDIATOR_THROTTLE_MAX_REQUESTS: ${MEDIATOR_THROTTLE_MAX_REQUESTS:-10}
+      MEDIATOR_THROTTLE_PERIOD_MILLIS: ${MEDIATOR_THROTTLE_PERIOD_MILLIS:-1000}
+
+      # ---- TLS ----
+      # Option A (default): mount a real keystore below and point at it.
+      # Option B: MEDIATOR_TLS_ENABLED=false behind a TLS-terminating proxy.
+      MEDIATOR_TLS_ENABLED: ${MEDIATOR_TLS_ENABLED:-true}
+      MEDIATOR_KEYSTORE_PATH: ${MEDIATOR_KEYSTORE_PATH:-file:/keystore.p12}
+      MEDIATOR_KEYSTORE_PASSWORD: ${MEDIATOR_KEYSTORE_PASSWORD:-changeit}
+      MEDIATOR_KEYSTORE_ALIAS: ${MEDIATOR_KEYSTORE_ALIAS:-mediator}
+    # To use a real certificate, place the PKCS12 keystore in ./certs/ and
+    # uncomment (plus set MEDIATOR_KEYSTORE_PATH=file:/certs/keystore.p12):
+    # volumes:
+    #   - ./certs:/certs:ro
+    ports:
+      - "${MEDIATOR_PORT:-9070}:9070"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -skf https://127.0.0.1:9070/api/health || curl -sf http://127.0.0.1:9070/api/health"]
+      start_period: 60s
+      interval: 15s
+      timeout: 5s
+      retries: 5

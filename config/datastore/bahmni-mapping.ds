@@ -1,0 +1,125 @@
+/* Bahmni ANC record -> DHIS2 tracker payload.
+   Datastore key: enable-emr-mapping/bahmni. A PURE FUNCTION of one per-woman
+   record (the shape the envelope expression produces): no variables, no lookups.
+
+   Emits NO trackedEntity/enrollment/event UIDs — DHIS2 owns identifiers; the
+   mediator looks the woman up by MRN + program after mapping and injects her
+   existing UIDs so a re-push updates instead of duplicating.
+
+   Org units carry the facility's DHIS2 org-unit CODE verbatim (the import runs
+   with orgUnitIdScheme=CODE). UIDs verified against db-dump/db-dump.sql.gz. */
+
+/* ---- DHIS2 metadata ----------------------------------------------------- */
+local PROGRAM = 'WSGAb5XwJ3Y';              // ANC - RMNCAH - Antenatal care registry
+local TRACKED_ENTITY_TYPE = 'MCPQUTHX1Ze';  // Person
+local STAGE = {
+  profile: 'iF5roNU7QWm',  // Woman's Profile and History (NON-repeatable)
+  exam: 'JqW7c9HYjVr',     // ANC Examination (repeatable)
+};
+local ATTRIBUTE = {
+  mrn: 'OYuDdqr2MvX',          // Client MRN (unique — the identity key)
+  dateOfBirth: 'Fgf497oYvSC',
+  phone: 'RJxLa3nITB3',        // SMS phone number
+};
+local DATA_ELEMENT = {
+  lnmp: 'w4ky6EkVahL',
+  edd: 'Ru01omP2WCQ',
+  gestationalAge: 'w9p8MQDRyMr',  // INTEGER_POSITIVE, sent only when the source sends it
+  gaSource: 'RPSgZF1i0hk',        // option set: Clinical | LMP | Ultrasound
+  visitNumber: 'bXVD2EMF7UW',     // ANC Visit Number — the event MERGE KEY
+};
+
+/* ---- helpers ------------------------------------------------------------- */
+local present(v) = v != null && v != '';
+local attribute(uid, value) = { attribute: uid, value: value };
+local dataValue(uid, value) = { dataElement: uid, value: value };
+
+/* ---- the record ----------------------------------------------------------- */
+local rec = body;
+local orgUnit = rec.facilityCode;
+local visits = std.sort(rec.visits, function(v) v.visitNumber);
+local lastVisit = visits[std.length(visits) - 1];
+local visitOnes = [v for v in visits if v.visitNumber == 1];
+
+/* enrollment anchor: the recorded first-visit date, else the earliest encounter */
+local enrolledAt = if present(rec.dateOfFirstVisit) then rec.dateOfFirstVisit
+                   else visits[0].encounterDate;
+
+/* ---- events ---------------------------------------------------------------- */
+/* Woman's Profile: one per pregnancy — built ONLY when this record carries
+   visit 1 (follow-up-only records leave the existing profile untouched). */
+local profileEvents = [
+  {
+    programStage: STAGE.profile,
+    orgUnit: orgUnit,
+    occurredAt: enrolledAt,
+    status: 'COMPLETED',
+    completedAt: enrolledAt,
+    /* GA is mapped VERBATIM when Bahmni sends it, omitted when it doesn't —
+       the mapping does no clinical arithmetic. Same for the source label:
+       it only makes sense alongside a GA value. */
+    dataValues:
+      [
+        dataValue(DATA_ELEMENT.lnmp, rec.lnmp),
+        dataValue(DATA_ELEMENT.edd, rec.edd),
+      ]
+      + (if present(v1.gestationalAge) then [
+           dataValue(DATA_ELEMENT.gestationalAge, v1.gestationalAge),
+           dataValue(DATA_ELEMENT.gaSource, 'LMP'),
+         ] else []),
+  }
+  for v1 in visitOnes
+];
+
+/* one exam event per encounter; the visit number is the merge key.
+   A visit captured in the source IS a completed contact — COMPLETED, dated
+   the day it happened. (Only the SCHEDULE placeholder below stays open: it is
+   what the overdue-visit tracking keys off.) */
+local examEvent(v) = {
+  programStage: STAGE.exam,
+  orgUnit: orgUnit,
+  occurredAt: v.encounterDate,
+  status: 'COMPLETED',
+  completedAt: v.encounterDate,
+  dataValues: [dataValue(DATA_ELEMENT.visitNumber, v.visitNumber)],
+};
+
+/* the next appointment: ONE SCHEDULE event from the LATEST visit's nextDate.
+   It carries NO data values — DHIS2 forbids them on SCHEDULE events (E1315) —
+   so it has no visit number. The merge instead claims the stage's open
+   SCHEDULE event when a real visit arrives: attendance fulfils the
+   appointment and the placeholder BECOMES the visit. */
+local scheduledEvents =
+  if present(lastVisit.nextDate) then [{
+    programStage: STAGE.exam,
+    orgUnit: orgUnit,
+    scheduledAt: lastVisit.nextDate,
+    status: 'SCHEDULE',
+  }] else [];
+
+/* ---- the tracker payload ---------------------------------------------------- */
+{
+  trackedEntities: [
+    {
+      trackedEntityType: TRACKED_ENTITY_TYPE,
+      orgUnit: orgUnit,
+      attributes: [
+        attribute(ATTRIBUTE.mrn, std.toString(rec.patientId)),
+        attribute(ATTRIBUTE.dateOfBirth, rec.birthDate),
+      ] + (
+        /* defensive: validation requires the phone, but never send a null value */
+        if present(rec.phoneNumber) then [attribute(ATTRIBUTE.phone, rec.phoneNumber)] else []
+      ),
+      enrollments: [
+        {
+          program: PROGRAM,
+          orgUnit: orgUnit,
+          enrolledAt: enrolledAt,
+          occurredAt: enrolledAt,
+          status: 'ACTIVE',
+          events: profileEvents + [examEvent(v) for v in visits] + scheduledEvents,
+        },
+      ],
+    },
+  ],
+}

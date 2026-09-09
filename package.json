@@ -1,0 +1,29 @@
+{
+  "name": "reference-emr-json-to-dhis2",
+  "version": "0.1.0",
+  "description": "Reference implementation: importing EMR JSON exports (PulseTech, Bahmni) into the DHIS2 ENABLE ANC tracker via an Apache Camel mediator with per-source pipelines and datastore-held DataSonnet mappings. For reference only \u2014 NOT for production.",
+  "license": "BSD-3-Clause",
+  "scripts": {
+    "build-mediator": "mvn -B clean package -Dmaven.test.skip=true -f mediator/pom.xml",
+    "build": "yarn build-mediator",
+    "test-mediator": "mvn -B clean test -f mediator/pom.xml",
+    "test-mediator:it": "mvn -B clean verify -f mediator/pom.xml",
+    "mappings:pack": "node scripts/pack-mappings.mjs",
+    "fixtures:update": "mvn -B test -f mediator/pom.xml -Dtest=FixtureRegeneratorTestCase -Dfixtures.write=true -Dsurefire.failIfNoSpecifiedTests=false",
+    "start-services": "docker compose up --build --renew-anon-volumes --force-recreate --remove-orphans",
+    "start": "yarn start-services",
+    "stop": "docker compose down",
+    "clean": "docker compose down --volumes --remove-orphans",
+    "logs": "docker compose logs -f mediator",
+    "health": "curl -sk https://localhost:9070/api/health",
+    "push:pulsetech": "docker compose run --rm pulsetech-mock",
+    "push:bahmni": "docker compose run --rm bahmni-mock",
+    "push:bahmni-batch": "docker compose run --rm bahmni-batch-mock",
+    "test:e2e": "playwright test",
+    "test:e2e:wipe": "E2E_WIPE_AFTER=1 playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.47.2",
+    "@types/node": "^22.7.3"
+  }
+}

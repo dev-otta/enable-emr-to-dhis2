@@ -1,0 +1,204 @@
+# ENABLE — EMR (JSON) → DHIS2 reference implementation
+#
+# This is a teaching/reference stack. It is NOT for production.
+#
+#   PulseTech mock ──push──►┐
+#                           ├──► Mediator (Apache Camel) ──► DHIS2 (ANC tracker)
+#   Bahmni mock ────push──►┘
+#
+# Structure follows dhis2/reference-dhis2-tracker-lis-integration. The EMRs
+# are mocked by one-shot curl containers that PUSH the sample JSON records to
+# the mediator — exactly what the real EMRs will do:
+#
+#   docker compose run --rm pulsetech-mock
+#   docker compose run --rm bahmni-mock
+#
+# (They sit behind the "push" profile so `docker compose up` doesn't fire them
+# before you're watching.)
+
+services:
+  # ---- DHIS2 database -------------------------------------------------
+  # Any *.sql.gz in ./db-dump is loaded automatically on first start. The
+  # dump is the ENABLE ANC package (DHIS2 2.41.5.x schema) — the source of
+  # every UID the mappings use.
+  db:
+    # Postgres 16 to match the source instance the dump was taken from (PG 16.4).
+    image: ghcr.io/baosystems/postgis:16-3.4
+    volumes:
+      - ./db-dump:/docker-entrypoint-initdb.d/:ro
+    environment:
+      POSTGRES_USER: dhis
+      POSTGRES_DB: dhis
+      POSTGRES_PASSWORD: &postgres_password dhis
+      PGPASSWORD: *postgres_password
+    healthcheck:
+      test: ["CMD-SHELL", "psql --no-password --quiet --username $$POSTGRES_USER postgres://127.0.0.1/$$POSTGRES_DB -p 5432 --command \"SELECT 'ok'\" > /dev/null"]
+      start_period: 120s
+      interval: 2s
+      timeout: 3s
+      retries: 5
+
+  # ---- DHIS2 application ----------------------------------------------
+  dhis2:
+    # Pinned to match the ENABLE test instance (DHIS2 2.41.5.1). The DB dump in
+    # db-dump/ MUST match this version — see db-dump/README.md.
+    image: "${DHIS2_IMAGE:-dhis2/core:2.41.5.1}"
+    volumes:
+      - ./config/dhis2/dhis.conf:/opt/dhis2/dhis.conf:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -S -O /dev/null http://127.0.0.1:8080/dhis-web-login/ 2>&1 | grep -q 'HTTP.*200'"]
+      start_period: 180s
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---- DHIS2 reverse proxy (so you reach DHIS2 on http://localhost:8080)
+  reverse-proxy:
+    image: nginx
+    restart: always
+    depends_on:
+      dhis2:
+        condition: service_healthy
+    ports:
+      - "${DHIS2_PORT:-8080}:80"
+    volumes:
+      - ./config/reverse-proxy/nginx.conf:/etc/nginx/nginx.conf:ro
+
+  # ---- Mediator: the Apache Camel middleware --------------------------
+  # Two ingest pipelines (one per EMR), each guarded by its own API key.
+  # The JSON→tracker mappings are NOT in this image: the seed container
+  # writes them into the DHIS2 datastore and the mediator fetches them at
+  # request time.
+  mediator:
+    build: ./mediator
+    restart: always
+    depends_on:
+      dhis2:
+        condition: service_healthy
+      seed:
+        condition: service_completed_successfully
+    environment:
+      # PulseTech is the POC pipeline — required. Bahmni is optional: leave its
+      # key blank and the source simply doesn't exist (no endpoint, no rule).
+      MEDIATOR_API_KEY_PULSETECH: ${MEDIATOR_API_KEY_PULSETECH:?Set MEDIATOR_API_KEY_PULSETECH in .env (copy from .env.example)}
+      MEDIATOR_API_KEY_BAHMNI: ${MEDIATOR_API_KEY_BAHMNI:-}
+      # Password for the self-signed TLS keystore baked into the image (demo only).
+      MEDIATOR_KEYSTORE_PASSWORD: ${MEDIATOR_KEYSTORE_PASSWORD:-changeit}
+      DHIS2_API_URL: http://dhis2:8080/api
+      # Demo defaults to admin; switch to a least-privilege account (docs/REFERENCE.md §6).
+      DHIS2_USERNAME: ${MEDIATOR_DHIS2_USERNAME:-admin}
+      DHIS2_PASSWORD: ${MEDIATOR_DHIS2_PASSWORD:-district}
+    ports:
+      - "${MEDIATOR_PORT:-9070}:9070"
+
+  # ---- Seed: writes the per-source datastore expressions, then exits --
+  # Three keys per EMR source: batch envelope (enable-emr-envelope/<source>),
+  # validation rules (enable-emr-validation/<source>) and the JSON->tracker
+  # mapping (enable-emr-mapping/<source>).
+  seed:
+    image: curlimages/curl
+    environment:
+      # Must be a valid DHIS2 account IN THE LOADED DUMP. The ENABLE dump carries
+      # its own users, so admin/district may not work — set SEED_DHIS2_USER/PASSWORD in .env.
+      SEED_DHIS2_USER: ${SEED_DHIS2_USER:-admin}
+      SEED_DHIS2_PASSWORD: ${SEED_DHIS2_PASSWORD:-district}
+    command:
+      - "/bin/sh"
+      - "-c"
+      - |
+        set -e
+        auth="$$SEED_DHIS2_USER:$$SEED_DHIS2_PASSWORD"
+        put() {
+          echo "Writing $$1 to the datastore..."
+          curl -X PUT  -sf --max-time 0 -u "$$auth" -H "Content-Type: application/json" -d @$$2 http://dhis2:8080/api/dataStore/$$1 \
+          || curl -X POST -sf --max-time 0 -u "$$auth" -H "Content-Type: application/json" -d @$$2 http://dhis2:8080/api/dataStore/$$1
+        }
+        for source in pulsetech bahmni; do
+          put enable-emr-envelope/$$source   /datastore/$$source-envelope.json
+          put enable-emr-validation/$$source /datastore/$$source-validation.json
+          put enable-emr-mapping/$$source    /datastore/$$source-mapping.json
+        done
+        echo "Seeding complete."
+        # NOTE: the Bahmni contract needs First Name / Father's Name to be
+        # NON-mandatory in the ANC program (Phone STAYS mandatory — the SMS
+        # programme needs it). The dump in db-dump/ carries this state
+        # (db-dump/README.md); for another instance, run
+        # scripts/relax-mandatory-attributes.sh once.
+    volumes:
+      - ./config/datastore:/datastore:ro
+    depends_on:
+      dhis2:
+        condition: service_healthy
+
+  # ---- EMR mocks: one-shot pushers standing in for the real EMRs ------
+  # Run on demand:  docker compose run --rm pulsetech-mock
+  pulsetech-mock:
+    image: curlimages/curl
+    profiles: ["push"]
+    environment:
+      MEDIATOR_API_KEY_PULSETECH: ${MEDIATOR_API_KEY_PULSETECH:?Set MEDIATOR_API_KEY_PULSETECH in .env}
+    command:
+      - "/bin/sh"
+      - "-c"
+      - |
+        echo "PulseTech mock: pushing ANC record to the mediator..."
+        curl -ksf -X POST \
+          -H "X-API-KEY: $$MEDIATOR_API_KEY_PULSETECH" \
+          -H "Content-Type: application/json" \
+          -d @/payloads/anc-record.json \
+          https://mediator:9070/api/pulsetech/anc-record
+        echo ""
+    volumes:
+      - ./emr-mocks/pulsetech:/payloads:ro
+    depends_on:
+      mediator:
+        condition: service_started
+
+  bahmni-mock:
+    image: curlimages/curl
+    profiles: ["push"]
+    environment:
+      MEDIATOR_API_KEY_BAHMNI: ${MEDIATOR_API_KEY_BAHMNI:?Set MEDIATOR_API_KEY_BAHMNI in .env}
+    command:
+      - "/bin/sh"
+      - "-c"
+      - |
+        echo "Bahmni mock: pushing ANC record to the mediator..."
+        curl -ksf -X POST \
+          -H "X-API-KEY: $$MEDIATOR_API_KEY_BAHMNI" \
+          -H "Content-Type: application/json" \
+          -d @/payloads/anc-record.json \
+          https://mediator:9070/api/bahmni/anc-record
+        echo ""
+    volumes:
+      - ./emr-mocks/bahmni:/payloads:ro
+    depends_on:
+      mediator:
+        condition: service_started
+
+  # The larger bulk push Bahmni will send: {"records":[...]} to /anc-records.
+  # Run with:  docker compose run --rm bahmni-batch-mock
+  bahmni-batch-mock:
+    image: curlimages/curl
+    profiles: ["push"]
+    environment:
+      MEDIATOR_API_KEY_BAHMNI: ${MEDIATOR_API_KEY_BAHMNI:?Set MEDIATOR_API_KEY_BAHMNI in .env}
+    command:
+      - "/bin/sh"
+      - "-c"
+      - |
+        echo "Bahmni mock: pushing an ANC BATCH to the mediator..."
+        curl -ks -X POST \
+          -H "X-API-KEY: $$MEDIATOR_API_KEY_BAHMNI" \
+          -H "Content-Type: application/json" \
+          -d @/payloads/anc-records-batch.json \
+          https://mediator:9070/api/bahmni/anc-records
+        echo ""
+    volumes:
+      - ./emr-mocks/bahmni:/payloads:ro
+    depends_on:
+      mediator:
+        condition: service_started

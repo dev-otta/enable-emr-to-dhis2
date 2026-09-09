@@ -1,0 +1,298 @@
+
+#   ingest-anc-record-route      direct:ingestAncRecord      one record  -> import report
+#   ingest-anc-batch-route       direct:ingestAncBatch       one batch   -> per-entry results
+#   transform-and-import-route   direct:transformAndImport   the per-record CORE both share
+#   fetch-*-route                direct:fetchEnvelope / fetchValidationRules / fetchMapping
+#   apply-datasonnet-route       direct:applyDataSonnet      generic evaluator
+#
+# Contract with the callers (the ingest routes in emr-ingest.camel.yaml):
+#   body               one parsed record (single) / the raw batch body (batch)
+#   variable 'source'  the EMR pushing (pulsetech | bahmni | ...) — selects
+#                      the source's datastore expressions for this request
+#
+# Each source ships THREE datastore expressions:
+#   enable-emr-envelope/<source>    raw batch body -> list of records
+#                                   (Bahmni: fold the flat encounter list into
+#                                   one record per woman — so no two batch
+#                                   entries can race on the same woman)
+#   enable-emr-validation/<source>  record -> {valid, missingFields}
+#   enable-emr-mapping/<source>     record -> DHIS2 tracker payload
+#
+# The per-record CORE both flows share: validate (gate) -> map -> look up by
+# MRN + program -> merge existing UIDs on a hit (DHIS2 owns all identifiers)
+# -> synchronous POST /api/tracker with orgUnitIdScheme=CODE.
+#
+# ERROR HANDLING: the core deliberately has no handlers.
+# Each caller decides what a failure means: the single route's doCatch renders
+# the HTTP error contract (400/409/502); the batch split's per-entry doCatch
+# turns the same exceptions into invalid/rejected result rows. (A route-scoped
+# onException would NOT work here: it only sees exceptions thrown by the
+# route's own steps, never those propagating out of a called direct: route —
+# doTry/doCatch does.)
+#
+# Batch: expressions are fetched ONCE per file; the split runs the core per
+# record INDEPENDENTLY (one bad record never sinks the file) and outcomes
+# aggregate into {summary, results[]} — 200 all imported, 207 otherwise.
+#
+# The DataSonnet evaluator (direct:applyDataSonnet) evaluates a datastore-held
+# expression against the current body — the one place Groovy appears.
+
+# ---------------------------------------------------------------------
+#  Single record: the response IS the import report (or the error contract)
+# ---------------------------------------------------------------------
+- route:
+    id: ingest-anc-record-route
+    from:
+      uri: direct:ingestAncRecord
+      steps:
+        - doTry:
+            steps:
+              - to:
+                  description: Fetch this source's validation rules (once per request)
+                  uri: direct:fetchValidationRules
+                  variableReceive: validationExpression
+              - to:
+                  description: Fetch this source's JSON->tracker mapping (once per request)
+                  uri: direct:fetchMapping
+                  variableReceive: mappingExpression
+              - to:
+                  description: The shared per-record core -> DHIS2 import report (as a Map)
+                  uri: direct:transformAndImport
+              - choice:
+                  when:
+                    - simple: "${body[status]} != 'OK'"
+                      steps:
+                        # Log hygiene: the report can echo record values, so the full body
+                        # only appears at DEBUG. The caller receives the report either way.
+                        - log:
+                            message: "DHIS2 tracker import reported errors for source '${variable.source}' (returning 409)"
+                            loggingLevel: ERROR
+                        - log:
+                            message: "Import report: ${body}"
+                            loggingLevel: DEBUG
+                        - setHeader:
+                            name: CamelHttpResponseCode
+                            constant: "409"
+                  otherwise:
+                    steps:
+                      - log: "DHIS2 tracker import OK for source '${variable.source}' (${body[stats]})"
+              - marshal:
+                  json: {}
+              - convertBodyTo:
+                  type: java.lang.String
+              - setHeader:
+                  name: Content-Type
+                  constant: application/json
+            doCatch:
+              - exception:
+                  - org.hisp.dhis.integration.emr.route.InvalidEmrPayloadException
+                steps:
+                  - process:
+                      description: 400 with the exact missing-field list
+                      ref: invalidPayloadResponse
+              - exception:
+                  - org.hisp.dhis.integration.sdk.api.RemoteDhis2ClientException
+                steps:
+                  - log:
+                      message: "DHIS2 rejected the request for source '${variable.source}': ${exchangeProperty.CamelExceptionCaught}"
+                      loggingLevel: ERROR
+                  - process:
+                      description: 409 with DHIS2's own report, else 502
+                      ref: dhis2ErrorResponse
+
+# ---------------------------------------------------------------------
+#  Batch: split -> core per entry (independent) -> {summary, results[]}
+# ---------------------------------------------------------------------
+- route:
+    id: ingest-anc-batch-route
+    from:
+      uri: direct:ingestAncBatch
+      steps:
+        - doTry:
+            steps:
+              - to:
+                  description: Fetch this source's batch envelope expression (raw body -> record list)
+                  uri: direct:fetchEnvelope
+                  variableReceive: envelopeExpression
+              - setVariable:
+                  name: dataSonnetExpression
+                  expression:
+                    simple: "${variable.envelopeExpression}"
+              - to:
+                  description: Fold the raw batch into records (Bahmni's flat encounter list -> one record per woman)
+                  uri: direct:applyDataSonnet
+              - unmarshal:
+                  description: The record list the split iterates
+                  json: {}
+              - to:
+                  description: Fetch this source's validation rules ONCE for the whole batch
+                  uri: direct:fetchValidationRules
+                  variableReceive: validationExpression
+              - to:
+                  description: Fetch this source's JSON->tracker mapping ONCE for the whole batch
+                  uri: direct:fetchMapping
+                  variableReceive: mappingExpression
+              - setProperty:
+                  description: Exchange properties propagate into split sub-exchanges
+                  name: batchValidationExpression
+                  expression:
+                    simple: "${variable.validationExpression}"
+              - setProperty:
+                  name: batchMappingExpression
+                  expression:
+                    simple: "${variable.mappingExpression}"
+              - split:
+                  description: Each entry runs the core independently; outcomes aggregate in order
+                  expression:
+                    simple: "${body}"
+                  aggregationStrategy: batchResultAggregation
+                  steps:
+                    - setVariable:
+                        name: validationExpression
+                        expression:
+                          simple: "${exchangeProperty.batchValidationExpression}"
+                    - setVariable:
+                        name: mappingExpression
+                        expression:
+                          simple: "${exchangeProperty.batchMappingExpression}"
+                    - doTry:
+                        steps:
+                          - to: direct:transformAndImport
+                        doCatch:
+                          - exception:
+                              - java.lang.Exception
+                            steps:
+                              - log:
+                                  message: "Batch entry ${exchangeProperty.CamelSplitIndex} from source '${variable.source}' failed: ${exchangeProperty.CamelExceptionCaught}"
+                                  loggingLevel: WARN
+                        doFinally:
+                          steps:
+                            - process:
+                                description: One result row per entry — IMPORTED / CONFLICT / INVALID / REJECTED / ERROR
+                                ref: batchEntryOutcome
+              - process:
+                  description: "{summary, results[]} — 200 when everything imported, 207 otherwise"
+                  ref: batchSummaryResponse
+            doCatch:
+              # A failure BEFORE the split (datastore read, envelope evaluation)
+              # fails the whole request — per entry there is nothing yet to blame.
+              - exception:
+                  - org.hisp.dhis.integration.sdk.api.RemoteDhis2ClientException
+                steps:
+                  - log:
+                      message: "Batch preparation failed for source '${variable.source}': ${exchangeProperty.CamelExceptionCaught}"
+                      loggingLevel: ERROR
+                  - process:
+                      ref: dhis2ErrorResponse
+
+# ---------------------------------------------------------------------
+#  The per-record core (expects variables validationExpression + mappingExpression)
+#  NO error handling here on purpose: it throws, the callers decide.
+# ---------------------------------------------------------------------
+- route:
+    id: transform-and-import-route
+    from:
+      uri: direct:transformAndImport
+      steps:
+        - setVariable:
+            name: dataSonnetExpression
+            expression:
+              simple: "${variable.validationExpression}"
+        - to:
+            description: Evaluate the rules against the record -> {valid, missingFields}
+            uri: direct:applyDataSonnet
+            variableReceive: validationResult
+        - process:
+            description: Reject invalid records with the exact missing-field list
+            ref: validationGate
+        - setVariable:
+            name: dataSonnetExpression
+            expression:
+              simple: "${variable.mappingExpression}"
+        - to:
+            description: Apply the mapping -> DHIS2 tracker payload (org units as CODEs, no UIDs — DHIS2 generates them)
+            uri: direct:applyDataSonnet
+            variableReceive: trackerPayload
+        - process:
+            description: Build the idempotency lookup (by MRN + program, both read from the mapped payload)
+            ref: trackedEntityLookupRequest
+        - to:
+            description: Ask DHIS2 whether this woman already exists in the program
+            uri: dhis2:get/resource
+            parameters:
+              path: tracker/trackedEntities
+              client: "#dhis2Client"
+        - unmarshal:
+            json: {}
+        - process:
+            description: On a hit, inject the existing TEI/enrollment/event UIDs -> update, never duplicate
+            ref: existingTrackedEntityMerge
+        - setHeader:
+            description: Import parameters from application.yaml — synchronous, full report, org units by CODE, rules skipped
+            name: CamelDhis2.queryParams
+            groovy: >
+              ['async': ['{{dhis2.import.async}}'],
+               'reportMode': ['{{dhis2.import.report-mode}}'],
+               'orgUnitIdScheme': ['{{dhis2.import.org-unit-id-scheme}}'],
+               'skipRuleEngine': ['{{dhis2.import.skip-rule-engine}}']]
+        - log: "Importing '${variable.source}' record into DHIS2 tracker (synchronous)"
+        - to:
+            description: POST to /api/tracker via the DHIS2 component
+            uri: dhis2:post/resource
+            parameters:
+              path: tracker
+              client: "#dhis2Client"
+        - unmarshal:
+            description: The import report, as a Map, for the caller to interpret
+            json: {}
+
+- route:
+    id: fetch-envelope-route
+    from:
+      uri: direct:fetchEnvelope
+      steps:
+        - toD:
+            description: Read the source's batch envelope expression from the DHIS2 datastore
+            uri: "dhis2:get/resource?path=dataStore/{{datastore.envelope-namespace}}/${variable.source}&client=#dhis2Client"
+        - unmarshal:
+            description: The datastore value is a JSON string holding the DataSonnet expression
+            json: {}
+
+- route:
+    id: fetch-validation-rules-route
+    from:
+      uri: direct:fetchValidationRules
+      steps:
+        - toD:
+            description: Read the source's validation rules from the DHIS2 datastore
+            uri: "dhis2:get/resource?path=dataStore/{{datastore.validation-namespace}}/${variable.source}&client=#dhis2Client"
+        - unmarshal:
+            description: The datastore value is a JSON string holding the DataSonnet expression
+            json: {}
+
+- route:
+    id: fetch-mapping-route
+    from:
+      uri: direct:fetchMapping
+      steps:
+        - toD:
+            description: Read the source's JSON->tracker mapping from the DHIS2 datastore
+            uri: "dhis2:get/resource?path=dataStore/{{datastore.mapping-namespace}}/${variable.source}&client=#dhis2Client"
+        - unmarshal:
+            description: The datastore value is a JSON string holding the DataSonnet expression
+            json: {}
+
+- route:
+    id: apply-datasonnet-route
+    from:
+      uri: direct:applyDataSonnet
+      steps:
+        - transform:
+            description: Evaluate the DataSonnet expression in variable 'dataSonnetExpression' against the body
+            groovy: |
+              camelContext.resolveLanguage('datasonnet').createExpression(variables.get('dataSonnetExpression')).with {
+                outputMediaType = new com.datasonnet.document.MediaType('application', 'json')
+                resultType = String
+                bodyMediaType = new com.datasonnet.document.MediaType('application', 'x-java-object')
+                evaluate(exchange, String)
+              }

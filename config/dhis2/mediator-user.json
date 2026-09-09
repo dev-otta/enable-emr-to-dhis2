@@ -1,0 +1,9 @@
+{
+  "id": "Med1atorUsr",
+  "username": "enable_mediator",
+  "firstName": "ENABLE",
+  "surname": "Mediator",
+  "userRoles": [{ "id": "Med1atorRol" }],
+  "organisationUnits": [{ "id": "ImspTQPwCqd" }],
+  "password": "REPLACE_WITH_STRONG_PASSWORD_FROM_ENV"
+}

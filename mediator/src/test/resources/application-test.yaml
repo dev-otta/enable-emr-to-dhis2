@@ -1,0 +1,25 @@
+# Route-test configuration: HTTPS off (plain HTTP against the random test port),
+# fixed test API keys (>= 16 chars — the startup guardrail enforces key length),
+# and dhis2.api-url pointing at the WireMock DHIS2 stand-in (injected via
+# @DynamicPropertySource in the test classes).
+
+server:
+  ssl:
+    enabled: false
+
+camel:
+  springboot:
+    main-run-controller: false
+    routes-include-pattern: "classpath:camel/*.camel.yaml"
+  dataformat:
+    json-jackson:
+      auto-discover-object-mapper: true
+
+api:
+  keys:
+    pulsetech: test-pulsetech-key-0001
+    bahmni: test-bahmni-key-000001
+
+dhis2:
+  username: admin
+  password: district

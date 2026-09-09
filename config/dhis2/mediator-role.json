@@ -1,0 +1,9 @@
+{
+  "id": "Med1atorRol",
+  "name": "ENABLE Mediator - tracker import",
+  "description": "Least-privilege role for the integration mediator. It must NOT carry admin authorities. Actual write access is granted by sharing the ANC program (and stages) with this role as 'data write', and by assigning the service user to the relevant org units.",
+  "authorities": [
+    "F_TRACKED_ENTITY_INSTANCE_ADD",
+    "F_TRACKED_ENTITY_INSTANCE_SEARCH"
+  ]
+}

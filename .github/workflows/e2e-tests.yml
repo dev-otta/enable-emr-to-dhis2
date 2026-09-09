@@ -1,0 +1,57 @@
+name: End-to-End Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: '0 0 * * *'
+
+jobs:
+  test:
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    env:
+      MEDIATOR_API_KEY_PULSETECH: e2e-pulsetech-0000000000000000000000000000000000000000
+      MEDIATOR_API_KEY_BAHMNI: e2e-bahmni-00000000000000000000000000000000000000000000
+      SEED_DHIS2_USER: admin
+      SEED_DHIS2_PASSWORD: district
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+      - name: Build the mediator
+        run: yarn build
+      - name: Start the stack
+        run: docker compose up --build -d
+      - name: Wait for the mediator to be healthy
+        run: |
+          for i in $(seq 1 90); do
+            if curl -skf https://localhost:9070/api/health > /dev/null; then
+              echo "Mediator is up."; exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::Mediator did not become healthy in time"
+          docker compose logs --tail 100
+          exit 1
+      - name: Run Playwright API tests
+        run: yarn test:e2e
+      - name: Dump service logs on failure
+        if: failure()
+        run: docker compose logs --tail 200
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 30

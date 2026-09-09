@@ -1,0 +1,6 @@
+/* To be implemented. For now, clean pass. 
+
+   Input:  the request body — {"records":[...]} (or a bare array).
+   Output: [record] — unchanged entries. */
+
+if std.isArray(body) then body else body.records

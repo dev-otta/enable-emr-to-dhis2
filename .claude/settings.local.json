@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__plugin_camel-mcp_camel__camel_catalog_components"
+    ]
+  }
+}

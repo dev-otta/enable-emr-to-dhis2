@@ -20,6 +20,11 @@ api:
     pulsetech: test-pulsetech-key-0001
     bahmni: test-bahmni-key-000001
 
+mediator:
+  throttle:
+    max-requests: 100000
+    period-millis: 1000
+
 dhis2:
   username: admin
   password: district

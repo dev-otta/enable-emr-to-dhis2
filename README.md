@@ -18,23 +18,23 @@ Antenatal care (ANC) visits are recorded in electronic medical record systems
 (EMRs) at the health facilities. For the ENABLE project, the same visits also
 need to exist in the DHIS2 ANC tracker, because the tracker is what drives an
 SMS programme that sends lifestyle messages and appointment reminders to
-pregnant women. Entering every visit twice is not realistic, so this
+pregnant women. This
 reference implementation demonstrates how EMRs can push their visit data to
 DHIS2 automatically.
 
-Two EMRs participate: PulseTech and [Bahmni](https://www.bahmni.org/). Each pushes its own native JSON
+Two EMRs participate: PulseTech and [Bahmni](https://www.bahmni.org/). Each EMR pushes its own native JSON
 export over HTTPS to a small mediator built with [Apache Camel](https://camel.apache.org/). The mediator
 authenticates the sending site, validates the record, maps it to a DHIS2
-tracker payload, and imports it. Imports are idempotent: the mediator looks
-the woman up by her phone number before every import and
-updates her if she already exists, so an EMR can safely push its full export
+tracker payload, and then imports it to a connected DHIS2 instance. Imports are idempotent, meaning the mediator looks
+the woman up by her MRN (Medical Record Number) before every import and
+updates her if she already exists. An EMR can therefore safely push its full export
 on a regular basis. DHIS2 generates and owns all identifiers.
 
 All logic that is specific to one EMR, meaning its validation rules, its
 field mappings and how its batch export is grouped into per-woman records,
-lives as [DataSonnet expressions](https://datasonnet.github.io/datasonnet-mapper/datasonnet/latest/index.html) in the DHIS2 datastore. Adapting the
+lives as [DataSonnet expressions](https://datasonnet.github.io/datasonnet-mapper/datasonnet/latest/index.html) in the [DHIS2 datastore](https://docs.dhis2.org/en/develop/using-the-api/dhis-core-version-240/data-store.html). Adapting the
 integration to a contract change, or onboarding a further EMR, is therefore
-a configuration change rather than a code change.
+a configuration change, where you update the mapping files located within the DHIS2's own datastore.
 
 While being tailored to a specific country use-case, this example can also guide your own EMR-DHIS2 integration. It should, however, not be
 used directly in production without adapting it to your local context.
@@ -47,9 +47,10 @@ that writes the DataSonnet expressions into the DHIS2 datastore.
 
 Prerequisites:
 
-* Docker Desktop
-* Node.js 18+ with Yarn
-* JDK 17+ and Maven
+* Install Docker Desktop which provides the tooling required to bring up the sandbox environment.
+* Install the Git client and run the command `git clone https://github.com/dev-otta/enable-emr-to-dhis2.git` to clone the repository
+* Node.js 18+ with Yarn. Install instructions can be found [here](https://www.digitalocean.com/community/tutorials/how-to-install-and-use-the-yarn-package-manager-for-node-js).
+* JDK 17+ and [Maven](https://maven.apache.org/install.html).
 
 Then walk through the following steps:
 
@@ -72,8 +73,7 @@ Then walk through the following steps:
    `ANC - RMNCAH - Antenatal care registry`. The five women from the export
    are registered, each with a completed profile, completed examination
    events, and one scheduled event for her next appointment.
-6. Run `yarn push:bahmni-batch` a second time. The response reports updates
-   instead of creates, and nothing in Capture is duplicated.
+6. To modify the test payload, i.e. for adding more events or changing the number of patient, go to [emr-mocks/bahmni/anc-records-batch.json](./emr-mocks/bahmni/anc-records-batch.json) and make the required updates. Run `yarn push:bahmni-batch` again to see your changes. 
 
 `yarn push:pulsetech` and `yarn push:bahmni` push single-woman samples the
 same way. To push with curl instead (the demo mediator uses a self-signed
@@ -96,14 +96,13 @@ The flow is accomplished in a few steps:
    (`POST /api/{source}/anc-records`). Each site authenticates with its own
    API key.
 2. For a batch, the mediator first applies the source's envelope expression,
-   which folds the raw export into one record per woman. Bahmni, for
-   example, exports a flat list of encounters with several rows per woman.
-3. Each record is validated against the source's validation rules. An
-   invalid record is rejected with a readable message that names the missing
-   fields and the patient concerned, so the EMR implementer can easily address the issues without reading the complete mediator logs.
+   which folds the raw export into one record per woman. This is done to better align with the DHIS2 data model.
+3. Each record is then validated against the source's validation rules. An
+   invalid record is rejected with an error message that names the missing
+   fields and the patient concerned.
 4. The valid record is mapped to a DHIS2 tracker payload. Facility org units
    are passed through as codes and resolved by DHIS2 at import.
-5. The mediator asks DHIS2 whether a woman with this record's phone number already
+5. The mediator asks DHIS2 whether a woman with this record's MRN already
    exists in the programme. If she does, her existing identifiers are merged
    into the payload so the import updates instead of duplicating.
 6. The payload is imported synchronously through the DHIS2 tracker API, and
@@ -117,14 +116,14 @@ mediator's behaviour without a redeployment.
 
 Each EMR exports the visits recorded at its facility as JSON in its own
 native structure. The mediator does not require a common format; the
-per-source expressions absorb the differences. The samples in
+per-source expressions stored in the DHIS2 datastore can be modified to handle the differences. The samples in
 [`emr-mocks/`](emr-mocks) document both contracts, and
 `emr-mocks/bahmni/anc-records-batch.json` is a reference export Batch from Bahmni. Key contract points, such as the mandatory phone number and
 the fields required with the first visit, are documented in
 [`docs/REFERENCE.md`](docs/REFERENCE.md).
 
 A source exists when its API key is configured in `.env`. Onboarding a new
-EMR means generating a key and writing three datastore expressions.
+EMR means generating a key and writing new datastore expressions for said EMR.
 
 ### Mediator
 
@@ -156,8 +155,7 @@ day they happened. The next appointment, taken from the latest visit, is
 imported as one scheduled event, which the Capture app and any overdue
 logic treat like an appointment a health worker scheduled within DHIS2.
 When the woman attends, the next push updates that scheduled event into the
-real visit. Program rules are skipped during imports; they continue to run
-for humans in the Capture UI. The field mappings, identifiers and
+real visit. Program rules are skipped during imports. The field mappings, identifiers and
 idempotency mechanics are documented in
 [`docs/REFERENCE.md`](docs/REFERENCE.md).
 
@@ -180,10 +178,10 @@ not part of this repository, but can be found [here](https://github.com/dev-otta
 
 ## Testing
 
-The test suite has three layers. The fast layer runs the unit tests and is not reliant on
+The test suite has three layers. The unit test layer is not reliant on
 Docker. These tests check the mapping based on reference payloads, security and fault
 injection. The integration layer boots a real DHIS2 from the dump with
-Testcontainers and proves the actual import semantics, such as idempotent
+Testcontainers and proves the import semantics, such as idempotent
 re-pushes and the scheduled event becoming the visit. The end-to-end layer
 drives the running Compose stack the way an EMR would.
 
@@ -191,7 +189,7 @@ drives the running Compose stack the way an EMR would.
 yarn test-mediator               # unit and route tests (WireMock as DHIS2)
 yarn test-mediator:it            # integration tests against a real DHIS2 (Docker required)
 yarn test:e2e                    # Playwright suite against the running stack
-yarn test:e2e:wipe               # same as above, then deletes the women the suite created
+yarn test:e2e:wipe               # same as above, but cleans the instance after testing
 ```
 
 ## Security Considerations
@@ -206,8 +204,7 @@ yarn test:e2e:wipe               # same as above, then deletes the women the sui
   with capture access limited to the participating org units, not a
   superuser.
 * The payloads contain personal data such as phone numbers and dates of
-  birth. Request bodies and import reports are logged at DEBUG level only,
-  and a privacy impact assessment should be carried out before connecting
+  birth. Request bodies and import reports are logged at DEBUG level. A privacy impact assessment should be carried out before connecting
   real facilities.
 
 # Support

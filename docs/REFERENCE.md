@@ -65,7 +65,7 @@ DHIS2 org unit code and resolved by DHIS2 at import
 | SMS phone number | `RJxLa3nITB3` | `pnt_phone` | `phoneNumber` |
 
 The Age attribute (`B6TnnFMgmCk`) is never sent. A Capture UI program rule
-calculates it from the date of birth when a human opens the record.
+calculates it from the date of birth when a clinician opens the record in DHIS2.
 
 ### Enrollment
 
@@ -145,11 +145,8 @@ created by DHIS2. Each existing event is claimed at most once.
 The identity attribute is configuration
 (`DHIS2_TRACKER_IDENTITY_ATTRIBUTE`). The project decision is to identify
 women by their phone number (`RJxLa3nITB3`), which both EMRs send and the
-SMS programme already depends on. The shipped default still points at the
-Client MRN attribute (`OYuDdqr2MvX`); switching it over also requires
-marking the phone number attribute unique in the programme metadata and
-agreeing on a normalised phone format across sources. Until that switch is
-made, the MRN is the effective key.
+SMS programme already depends on. The default value in the reference implementaiton is the
+Client MRN attribute (`OYuDdqr2MvX`).
 
 Whatever the attribute, the same properties hold. The attribute is unique
 in DHIS2, so two concurrent first pushes for the same woman end in one

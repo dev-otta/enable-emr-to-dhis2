@@ -12,9 +12,6 @@
 #
 # Each source ships THREE datastore expressions:
 #   enable-emr-envelope/<source>    raw batch body -> list of records
-#                                   (Bahmni: fold the flat encounter list into
-#                                   one record per woman — so no two batch
-#                                   entries can race on the same woman)
 #   enable-emr-validation/<source>  record -> {valid, missingFields}
 #   enable-emr-mapping/<source>     record -> DHIS2 tracker payload
 #
@@ -119,7 +116,7 @@
                   expression:
                     simple: "${variable.envelopeExpression}"
               - to:
-                  description: Fold the raw batch into records (Bahmni's flat encounter list -> one record per woman)
+                  description: Unwrap the raw batch into the list of per-woman records
                   uri: direct:applyDataSonnet
               - unmarshal:
                   description: The record list the split iterates

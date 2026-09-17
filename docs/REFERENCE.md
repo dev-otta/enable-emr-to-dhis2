@@ -27,21 +27,23 @@ fields and the patient concerned, before DHIS2 is contacted.
 `anc_followup` array where each entry carries `followup_date`, `lmp_date`,
 `edd`, `ga` and `visit_number` (as text, for example `"Visit 3"`).
 
-**Bahmni** exports a flat array of encounters, with several rows per woman.
-The envelope expression groups the rows by `patientId` into one record per
-woman: `patientId`, `birthDate`, `phoneNumber`, `facilityCode`,
-`dateOfFirstVisit`, `lnmp`, `edd`, and a `visits` array where each entry
-carries `encounterId`, `encounterDate`, `visitNumber`, `gestationalAge` and
-`nextDate`. Patient-level fields are taken from the first row that has them.
-Bahmni does not export names.
+**Bahmni** exports one object per woman: `patientId`, `birthDate`,
+`phoneNumber`, `facilityName`, `facilityCode`, and an `encounters` array
+where each entry carries `encounterId`, `encounterDate`, `dateOfFirstVisit`,
+`visitNumber`, `gestationalAge`, `nextDate`, `EDD` and `LNMP`. The fields
+that describe the pregnancy rather than the visit (LNMP, EDD, the date of
+the first visit) travel on the encounter that captured them and are null on
+the others. Bahmni does not export names.
 
 Two rules apply to both sources. The phone number is mandatory on every
 record, because the SMS programme depends on it; a record without one is a
 vendor error, not an admission case. The fields that feed the woman's
-profile, meaning LNMP, EDD and the gestational age, are mandatory exactly
-when the record contains visit 1. A record that only contains follow-up
-visits does not need them, because the profile was created when visit 1 was
-pushed. Name fields are optional in both contracts: they are mapped when the
+profile, meaning LNMP, EDD and the gestational age, arrive as a set. In the
+Bahmni export, an encounter that carries LNMP or EDD is the registration
+encounter and must carry all three. A record whose encounters carry none of
+them is a valid follow-up, because the profile was created when the
+registration data was pushed. PulseTech sends the set with every follow-up
+entry. Name fields are optional in both contracts: they are mapped when the
 export includes them and dropped when it does not.
 
 ## 2. Field mapping
@@ -70,21 +72,22 @@ calculates it from the date of birth when a clinician opens the record in DHIS2.
 ### Enrollment
 
 One enrollment per woman, status ACTIVE for as long as the pregnancy is
-ongoing. `enrolledAt` and `occurredAt` are the date of the first visit:
-`dateOfFirstVisit` for Bahmni (falling back to the earliest encounter) and
-the earliest follow-up date for PulseTech.
+ongoing. `enrolledAt` and `occurredAt` are the date of the first visit: for
+Bahmni the first `dateOfFirstVisit` found on her encounters (falling back
+to the earliest encounter date), for PulseTech the earliest follow-up date.
 
 ### Woman's Profile and History
 
 Stage `iF5roNU7QWm`, non-repeatable, so one event per pregnancy. The
-mediator builds it only when the record contains visit 1; follow-up-only
+mediator builds it only when the record carries registration data, taking
+it from the registration encounter whatever its visit number; follow-up-only
 records leave the existing profile untouched. It carries LNMP
 (`w4ky6EkVahL`), EDD (`Ru01omP2WCQ`), the gestational age in weeks
 (`w9p8MQDRyMr`) and the gestational age source (`RPSgZF1i0hk`, always
-`LMP`). The gestational age is mapped verbatim from the source; the mapping
-performs no clinical arithmetic. Because it is mandatory with visit 1 (see
-section 1), the gestational age and its source can remain compulsory data
-elements in the programme metadata.
+`LMP`). The gestational age is mapped verbatim from the source. the mapping
+performs no computations. Because the set is mandatory on the
+registration encounter (see section 1), the gestational age and its source
+can remain compulsory data elements in the programme metadata.
 
 ### ANC Examination
 
@@ -151,11 +154,12 @@ Client MRN attribute (`OYuDdqr2MvX`).
 Whatever the attribute, the same properties hold. The attribute is unique
 in DHIS2, so two concurrent first pushes for the same woman end in one
 create and one rejected import, and the rejected side converges on retry.
-Within a batch, the envelope folds all of a woman's rows into one record
-before anything runs, and records are imported sequentially and
-synchronously, so a batch cannot race against itself. The trade-off of
+Within a batch, each woman is one record (Bahmni exports one object per
+woman; the envelope only unwraps the request body), and records are
+imported sequentially and synchronously, so a batch cannot race against
+itself. The trade-off of
 attribute-based identity is that a corrected identifier in the EMR creates
-a new person in DHIS2; there is no fuzzy matching.
+a new person in DHIS2.
 
 ## 4. Configuration
 

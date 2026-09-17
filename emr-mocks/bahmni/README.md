@@ -1,17 +1,17 @@
 # Bahmni sample payloads
 
-`anc-records-batch.json` is the reference export shared by the Bahmni team:
-a flat array of encounters, several rows per woman, keyed by `patientId`. It
-is pushed as-is to `POST /api/bahmni/anc-records`. The envelope expression
-in `config/datastore/bahmni-envelope.ds` folds it into one record per woman.
+`anc-records-batch.json` follows the Bahmni export format.
+An array with one object per woman, carrying her identity fields and an
+`encounters` array. It is pushed as-is to `POST /api/bahmni/anc-records`.
+The envelope expression in `config/datastore/bahmni-envelope.ds` only
+unwraps the request body. The entries pass through unchanged.
 
-`anc-record.json` is the per-woman shape that the envelope produces, shown
-here for one woman from that export. It is what
-`POST /api/bahmni/anc-record` accepts, and what the validation and mapping
-expressions operate on.
+`anc-record.json` is a single entry from that export (woman 668466). It is
+what `POST /api/bahmni/anc-record` accepts, and what the validation and
+mapping expressions operate on.
 
-The Bahmni contract itself (required fields, the phone number rule, how the
-next appointment is handled) is documented in `docs/REFERENCE.md`. Note that
-the shipped samples deviate from the raw export where the contract has since
-been tightened: phone numbers and the first visit's gestational age were
-filled in, because both are now mandatory.
+The registration fields (LNMP, EDD, gestational age, the date of the first
+visit) travel on the encounter that captured them and are null on the
+others. The Bahmni contract itself (required fields, the phone number rule,
+how the next appointment is handled) is documented in `docs/REFERENCE.md`.
+Note that the shipped samples are a happy-case version of the raw export, which includes all mandatory data as agreed in the contract.

@@ -32,7 +32,7 @@
                 },
                 {
                   "dataElement": "w9p8MQDRyMr",
-                  "value": 45
+                  "value": "45"
                 },
                 {
                   "dataElement": "RPSgZF1i0hk",
@@ -45,24 +45,11 @@
               "status": "COMPLETED"
             },
             {
-              "completedAt": "2026-08-24",
-              "dataValues": [
-                {
-                  "dataElement": "bXVD2EMF7UW",
-                  "value": 1
-                }
-              ],
-              "occurredAt": "2026-08-24",
-              "orgUnit": "1057888",
-              "programStage": "JqW7c9HYjVr",
-              "status": "COMPLETED"
-            },
-            {
               "completedAt": "2026-08-25",
               "dataValues": [
                 {
                   "dataElement": "bXVD2EMF7UW",
-                  "value": 2
+                  "value": 1
                 }
               ],
               "occurredAt": "2026-08-25",

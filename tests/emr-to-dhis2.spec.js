@@ -33,7 +33,6 @@ const EXAM_STAGE = "JqW7c9HYjVr";
 const VISIT_NUMBER_DE = "bXVD2EMF7UW";
 
 const PULSETECH = { record: readSample("pulsetech/anc-record.json"), mrn: "719685" };
-// The Bahmni samples are the REAL reference export (8 encounters, 5 women).
 const BAHMNI = { record: readSample("bahmni/anc-record.json"), mrn: "668466" };
 
 function readSample(rel) {
@@ -185,10 +184,9 @@ test("Bahmni record lands: nameless woman with her phone, exam events, SCHEDULE 
   expect(te.enrollments).toHaveLength(1);
   const events = te.enrollments[0].events;
 
-  // Her two real encounters: captured in the source = COMPLETED in DHIS2,
-  // carrying their visit numbers.
+  // carrying its visit number.
   const exams = events.filter((e) => e.programStage === EXAM_STAGE && e.status !== "SCHEDULE");
-  expect(exams.map((e) => dataValue(e, VISIT_NUMBER_DE)).sort()).toEqual(["1", "2"]);
+  expect(exams.map((e) => dataValue(e, VISIT_NUMBER_DE)).sort()).toEqual(["1"]);
   for (const exam of exams) expect(exam.status).toBe("COMPLETED");
 
   // The nextDate became ONE SCHEDULE placeholder. It carries NO data values —
@@ -200,13 +198,13 @@ test("Bahmni record lands: nameless woman with her phone, exam events, SCHEDULE 
   expect(scheduled[0].dataValues ?? []).toHaveLength(0);
 });
 
-test("the real Bahmni export (flat encounter list) lands every woman once; a re-push duplicates nothing", async ({
+test("the Bahmni export (one object per woman) lands every woman once; a re-push duplicates nothing", async ({
   request,
 }) => {
   test.skip(!BAHMNI_KEY, "Bahmni source disabled (MEDIATOR_API_KEY_BAHMNI not set)");
-  const batch = readSample("bahmni/anc-records-batch.json"); // a BARE ARRAY of encounters
-  // 8 encounters -> 5 women, in order of first appearance (the envelope folds them).
-  const mrns = [...new Set(batch.map((e) => String(e.patientId)))];
+  const batch = readSample("bahmni/anc-records-batch.json"); // a bare array of person objects
+  // 5 women, one object each, in export order.
+  const mrns = batch.map((p) => String(p.patientId));
   expect(mrns).toEqual(["668462", "668465", "668464", "668463", "668466"]);
 
   const first = await request.post(`${MEDIATOR}/api/bahmni/anc-records`, {
@@ -252,17 +250,18 @@ test("the appointment lifecycle: scheduled -> attended (same event) -> reschedul
     birthDate: "1995-05-05",
     phoneNumber: "0911000111",
     facilityCode: "1057888",
-    dateOfFirstVisit: "2026-08-10",
-    lnmp: "2026-06-15",
-    edd: "2027-03-22",
+    facilityName: "Felege Meles Health center",
   };
 
-  // Week 1: visits 1+2 captured, next appointment on 7 Sep.
+  // Week 1: visits 1+2 captured, next appointment on 7 Sep. The registration
+  // data (LNMP/EDD/GA as a set) rides on the visit-1 encounter.
   const weekOne = {
     ...base,
-    visits: [
-      { encounterId: 1, encounterDate: "2026-08-10", visitNumber: 1, gestationalAge: 8, nextDate: null },
-      { encounterId: 2, encounterDate: "2026-08-24", visitNumber: 2, gestationalAge: 10, nextDate: "2026-09-07" },
+    encounters: [
+      { encounterId: 1, encounterDate: "2026-08-10", dateOfFirstVisit: "2026-08-10",
+        visitNumber: 1, gestationalAge: "8", nextDate: null, LNMP: "2026-06-15", EDD: "2027-03-22" },
+      { encounterId: 2, encounterDate: "2026-08-24", dateOfFirstVisit: "2026-08-10",
+        visitNumber: 2, gestationalAge: "10", nextDate: "2026-09-07", LNMP: null, EDD: null },
     ],
   };
   expect((await pushRecord(request, "bahmni", BAHMNI_KEY, weekOne)).status()).toBe(200);
@@ -278,9 +277,10 @@ test("the appointment lifecycle: scheduled -> attended (same event) -> reschedul
   // not sit open next to a fourth exam event.
   const weekTwo = {
     ...base,
-    lnmp: null,
-    edd: null,
-    visits: [{ encounterId: 3, encounterDate: "2026-09-07", visitNumber: 3, gestationalAge: 12, nextDate: "2026-10-05" }],
+    encounters: [
+      { encounterId: 3, encounterDate: "2026-09-07", dateOfFirstVisit: "2026-08-10",
+        visitNumber: 3, gestationalAge: "12", nextDate: "2026-10-05", LNMP: null, EDD: null },
+    ],
   };
   expect((await pushRecord(request, "bahmni", BAHMNI_KEY, weekTwo)).status()).toBe(200);
 
@@ -296,7 +296,7 @@ test("the appointment lifecycle: scheduled -> attended (same event) -> reschedul
 
   // The clinic moves the appointment: same visits, only nextDate changes.
   // The open placeholder must be UPDATED in place, never duplicated.
-  const rescheduled = { ...weekTwo, visits: [{ ...weekTwo.visits[0], nextDate: "2026-10-19" }] };
+  const rescheduled = { ...weekTwo, encounters: [{ ...weekTwo.encounters[0], nextDate: "2026-10-19" }] };
   expect((await pushRecord(request, "bahmni", BAHMNI_KEY, rescheduled)).status()).toBe(200);
 
   events = (await findByMrn(request, String(patientId)))[0].enrollments[0].events;

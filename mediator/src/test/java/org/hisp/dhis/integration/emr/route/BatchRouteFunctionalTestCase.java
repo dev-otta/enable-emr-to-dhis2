@@ -38,7 +38,6 @@ public class BatchRouteFunctionalTestCase extends AbstractIngestFunctionalTestCa
     assertEquals(200, response.getStatusCode().value());
     Map<String, Object> body = OBJECT_MAPPER.readValue(response.getBody(), Map.class);
     Map<String, Object> summary = (Map<String, Object>) body.get("summary");
-    // 8 encounters, but 5 WOMEN — the envelope folded the flat export per patientId.
     assertEquals(5, summary.get("received"));
     assertEquals(5, summary.get("imported"));
 
@@ -58,7 +57,6 @@ public class BatchRouteFunctionalTestCase extends AbstractIngestFunctionalTestCa
   @SuppressWarnings("unchecked")
   void testOneInvalidWomanDoesNotSinkTheBatch() throws IOException {
     List<Map<String, Object>> export = TestPayloads.readJsonList("emr-mocks/bahmni/anc-records-batch.json");
-    // Break woman 668464 (one encounter): no facilityCode anywhere -> INVALID.
     export.stream()
         .filter(e -> e.get("patientId").equals(668464))
         .forEach(e -> e.remove("facilityCode"));

@@ -195,26 +195,23 @@ public class RouteFunctionalTestCase extends AbstractIngestFunctionalTestCase {
   }
 
   @Test
-  void testBahmniRecordWithVisitOneButNoLnmpReturns400() {
-    // lnmp/edd are required exactly when the record carries visit 1 (the Woman's
-    // Profile event is built from them); follow-up-only records skip the rule.
+  @SuppressWarnings("unchecked")
+  void testBahmniRegistrationEncounterWithoutLnmpReturns400() {
     Map<String, Object> record = TestPayloads.readJson("emr-mocks/bahmni/anc-record.json");
-    record.put("lnmp", null);
+    ((List<Map<String, Object>>) record.get("encounters")).get(0).put("LNMP", null);
 
     ResponseEntity<String> response =
         push("/api/bahmni/anc-record", BAHMNI_KEY, TestPayloads.toJson(record));
     assertEquals(400, response.getStatusCode().value());
-    assertTrue(response.getBody().contains("lnmp"));
+    assertTrue(response.getBody().contains("LNMP"));
     assertEquals(0, trackerRequests().size());
   }
 
   @Test
   @SuppressWarnings("unchecked")
   void test400NamesThePatientTheVerdictIsAbout() throws IOException {
-    // A vendor pushing many records needs to know WHICH patient to fix — the 400
-    // carries the record's own MRN whenever the record had one.
     Map<String, Object> record = TestPayloads.readJson("emr-mocks/bahmni/anc-record.json");
-    record.put("lnmp", null);
+    ((List<Map<String, Object>>) record.get("encounters")).get(0).put("LNMP", null);
 
     ResponseEntity<String> response =
         push("/api/bahmni/anc-record", BAHMNI_KEY, TestPayloads.toJson(record));
@@ -226,7 +223,6 @@ public class RouteFunctionalTestCase extends AbstractIngestFunctionalTestCase {
 
   @Test
   void testImportReportWithErrorsReturns409() {
-    // DHIS2 answered 200 but the synchronous import report carries errors.
     Dhis2ApiStub.server()
         .stubFor(
             post(urlPathEqualTo("/api/tracker"))
@@ -244,8 +240,6 @@ public class RouteFunctionalTestCase extends AbstractIngestFunctionalTestCase {
 
   @Test
   void testDhis2ConflictPassesThroughAs409WithTheRealReport() {
-    // DHIS2 answered 409 (e.g. an org-unit code that resolves to nothing under
-    // orgUnitIdScheme=CODE). The vendor must see DHIS2's own report, not a generic 502.
     Dhis2ApiStub.server()
         .stubFor(
             post(urlPathEqualTo("/api/tracker"))

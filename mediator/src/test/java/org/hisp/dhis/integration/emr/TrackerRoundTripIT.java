@@ -117,7 +117,6 @@ public class TrackerRoundTripIT extends AbstractDhis2IT {
       }
     }
 
-    // A follow-up-only woman (no visit 1 in the export) exists WITHOUT a profile event.
     List<JsonNode> followUpOnly = findByMrn("668465");
     assertEquals(1, followUpOnly.size());
     assertFalse(
@@ -155,34 +154,31 @@ public class TrackerRoundTripIT extends AbstractDhis2IT {
     String placeholderUid = placeholder.path("event").asText();
     int eventsBefore = events(before).size();
 
-    // Week 2: she attended — visit 3 arrives as a real encounter (follow-up-only record).
-    String visitThree =
+    // Week 2: she attended — visit 2 arrives as a follow-up-only record
+    // (her registration data went in with week 1).
+    String visitTwo =
         """
         {
           "patientId": 668466,
           "birthDate": "1994-06-18",
           "phoneNumber": "0911556677",
           "facilityCode": "1057888",
-          "dateOfFirstVisit": "2026-08-25",
-          "lnmp": "2026-08-25",
-          "edd": "2027-06-01",
-          "visits": [
-            { "encounterId": 40, "encounterDate": "2026-09-02", "visitNumber": 3,
-              "gestationalAge": 46, "nextDate": "2026-09-30" }
+          "facilityName": "Felege Meles Health center",
+          "encounters": [
+            { "encounterId": 40, "encounterDate": "2026-09-02", "dateOfFirstVisit": "2026-08-25",
+              "visitNumber": 2, "gestationalAge": "46", "nextDate": "2026-09-30",
+              "EDD": null, "LNMP": null }
           ]
         }
         """;
-    ResponseEntity<String> response = push("/api/bahmni/anc-record", BAHMNI_KEY, visitThree);
+    ResponseEntity<String> response = push("/api/bahmni/anc-record", BAHMNI_KEY, visitTwo);
     assertEquals(200, response.getStatusCode().value(), response.getBody());
 
     JsonNode after = findByMrn("668466").get(0);
-    // The placeholder BECAME the visit: same DHIS2 event UID, now real, carrying
-    // the visit number (the merge claims the stage's open SCHEDULE event).
-    JsonNode visit3 = eventWithVisitNumber(after, "3");
-    assertNotNull(visit3);
-    assertEquals(placeholderUid, visit3.path("event").asText(), "updated in place, not duplicated");
-    assertEquals("COMPLETED", visit3.path("status").asText(), "attended = completed");
-    // A NEW placeholder rolled forward onto the new nextDate.
+    JsonNode visit2 = eventWithVisitNumber(after, "2");
+    assertNotNull(visit2);
+    assertEquals(placeholderUid, visit2.path("event").asText(), "updated in place, not duplicated");
+    assertEquals("COMPLETED", visit2.path("status").asText(), "attended = completed");
     JsonNode next = scheduledEvent(after);
     assertNotNull(next, "new SCHEDULE placeholder from the new nextDate");
     assertNotEquals(placeholderUid, next.path("event").asText());

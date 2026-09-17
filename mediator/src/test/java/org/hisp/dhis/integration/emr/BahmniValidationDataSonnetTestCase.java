@@ -11,8 +11,8 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests for the Bahmni validation rules (config/datastore/bahmni-validation.ds), against the
- * real per-woman record shape. The rules are STRUCTURAL only ("can the mapping run?"); the data
- * model itself — mandatory attributes, types, ranges — is DHIS2's to enforce.
+ * per-person record shape Bahmni exports. The rules are STRUCTURAL only ("can the mapping run?");
+ * the data model itself — mandatory attributes, types, ranges — is DHIS2's to enforce.
  */
 public class BahmniValidationDataSonnetTestCase extends AbstractDataSonnetTestCase {
 
@@ -29,8 +29,8 @@ public class BahmniValidationDataSonnetTestCase extends AbstractDataSonnetTestCa
   }
 
   @SuppressWarnings("unchecked")
-  private static List<Map<String, Object>> visits(Map<String, Object> sample) {
-    return (List<Map<String, Object>>) sample.get("visits");
+  private static List<Map<String, Object>> encounters(Map<String, Object> sample) {
+    return (List<Map<String, Object>>) sample.get("encounters");
   }
 
   @Test
@@ -43,16 +43,61 @@ public class BahmniValidationDataSonnetTestCase extends AbstractDataSonnetTestCa
   }
 
   @Test
-  @SuppressWarnings("unchecked")
-  public void testGestationalAgeIsRequiredOnVisitOne() throws IOException {
-    // The mapping agreement: GA, LNMP and EDD are all given with visit 1.
-    // The profile completes on import and GA is compulsory on completion, so
-    // reject GA-less visit-1 records here with a vendor-readable message.
+  public void testPhonelessWomanIsRejectedWithAReadableMessage() throws IOException {
     Map<String, Object> sample = readEmrSample("bahmni/anc-record.json");
-    ((List<Map<String, Object>>) sample.get("visits")).get(0).put("gestationalAge", null);
+    sample.put("phoneNumber", null);
+    Map<String, Object> result = evaluate(rules, sample);
+    assertEquals(false, result.get("valid"));
+    assertTrue(missingFields(result).contains("phoneNumber"));
+  }
+
+  @Test
+  public void testRegistrationDataArrivesAsASet() throws IOException {
+    // An encounter that carries LNMP or EDD is the registration encounter and
+    // feeds the profile — LNMP, EDD and gestationalAge must all be present on it.
+    Map<String, Object> sample = readEmrSample("bahmni/anc-record.json");
+    encounters(sample).get(0).put("gestationalAge", null);
     Map<String, Object> result = evaluate(rules, sample);
     assertEquals(false, result.get("valid"));
     assertTrue(missingFields(result).stream().anyMatch(f -> f.contains("gestationalAge")));
+
+    sample = readEmrSample("bahmni/anc-record.json");
+    encounters(sample).get(0).put("EDD", null);
+    result = evaluate(rules, sample);
+    assertEquals(false, result.get("valid"));
+    assertTrue(missingFields(result).stream().anyMatch(f -> f.contains("EDD")));
+  }
+
+  @Test
+  public void testFollowUpOnlyRecordIsValidWithoutRegistrationData() throws IOException {
+    // No LNMP/EDD on any encounter: no profile is built, and nothing is required.
+    Map<String, Object> sample = readEmrSample("bahmni/anc-record.json");
+    for (Map<String, Object> encounter : encounters(sample)) {
+      encounter.put("LNMP", null);
+      encounter.put("EDD", null);
+      encounter.put("gestationalAge", null);
+    }
+    assertEquals(true, evaluate(rules, sample).get("valid"));
+  }
+
+  @Test
+  public void testPerEncounterFieldsAreNamed() throws IOException {
+    Map<String, Object> sample = readEmrSample("bahmni/anc-record.json");
+    encounters(sample).get(0).remove("encounterDate");
+    encounters(sample).get(0).put("visitNumber", "one"); // must be numeric
+    Map<String, Object> result = evaluate(rules, sample);
+    assertEquals(false, result.get("valid"));
+    assertTrue(missingFields(result).contains("encounters[0].encounterDate"));
+    assertTrue(missingFields(result).contains("encounters[0].visitNumber"));
+  }
+
+  @Test
+  public void testMissingIdentityFieldsAreListedPrecisely() throws IOException {
+    Map<String, Object> result = evaluate(rules, Map.of("encounters", List.of()));
+    assertEquals(false, result.get("valid"));
+    assertTrue(missingFields(result).contains("patientId"));
+    assertTrue(missingFields(result).contains("facilityCode"));
+    assertTrue(missingFields(result).contains("encounters (at least one entry)"));
   }
 
   @Test
@@ -65,64 +110,9 @@ public class BahmniValidationDataSonnetTestCase extends AbstractDataSonnetTestCa
   }
 
   @Test
-  public void testPhonelessWomanIsRejectedWithAReadableMessage() throws IOException {
-    // Policy row in the rules: the phone number IS required — the SMS programme is
-    // the point of the integration, and the attribute is mandatory in DHIS2. The
-    // mediator names the field instead of letting DHIS2 answer with an error code.
-    Map<String, Object> sample = readEmrSample("bahmni/anc-record.json");
-    sample.put("phoneNumber", null);
-    Map<String, Object> result = evaluate(rules, sample);
-    assertEquals(false, result.get("valid"));
-    assertTrue(missingFields(result).contains("phoneNumber"));
-  }
-
-  @Test
-  public void testMissingIdentityFieldsAreListedPrecisely() throws IOException {
-    Map<String, Object> sample = readEmrSample("bahmni/anc-record.json");
-    sample.remove("patientId");
-    sample.put("facilityCode", null);
-
-    Map<String, Object> result = evaluate(rules, sample);
-    assertEquals(false, result.get("valid"));
-    assertTrue(missingFields(result).contains("patientId"));
-    assertTrue(missingFields(result).contains("facilityCode"));
-  }
-
-  @Test
-  public void testLnmpAndEddAreRequiredOnlyWithVisitOne() throws IOException {
-    // With visit 1 in the record, the Woman's Profile event is built -> lnmp/edd required.
-    Map<String, Object> withVisitOne = readEmrSample("bahmni/anc-record.json");
-    withVisitOne.put("lnmp", null);
-    Map<String, Object> result = evaluate(rules, withVisitOne);
-    assertEquals(false, result.get("valid"));
-    assertTrue(missingFields(result).stream().anyMatch(f -> f.startsWith("lnmp")));
-
-    // Without visit 1 (follow-up-only record), no profile is built -> lnmp/edd optional.
-    Map<String, Object> followUpOnly = readEmrSample("bahmni/anc-record.json");
-    followUpOnly.put("lnmp", null);
-    followUpOnly.put("edd", null);
-    visits(followUpOnly).get(0).put("visitNumber", 3);
-    visits(followUpOnly).get(1).put("visitNumber", 4);
-    assertEquals(true, evaluate(rules, followUpOnly).get("valid"));
-  }
-
-  @Test
-  public void testPerVisitFieldsAreNamed() throws IOException {
-    Map<String, Object> sample = readEmrSample("bahmni/anc-record.json");
-    visits(sample).get(1).remove("encounterDate");
-    visits(sample).get(1).put("visitNumber", "two"); // not a number
-
-    Map<String, Object> result = evaluate(rules, sample);
-    assertEquals(false, result.get("valid"));
-    assertTrue(missingFields(result).contains("visits[1].encounterDate"));
-    assertTrue(missingFields(result).contains("visits[1].visitNumber"));
-  }
-
-  @Test
   public void testArbitrarilyMalformedInputDoesNotCrashTheRules() {
-    Map<String, Object> result = evaluate(rules, Map.of("visits", "not-an-array"));
-    assertEquals(false, result.get("valid"));
-    assertTrue(missingFields(result).contains("patientId"));
-    assertTrue(missingFields(result).contains("visits (at least one encounter)"));
+    // Every access is guarded: junk input degrades to a field list, never an error.
+    assertEquals(false, evaluate(rules, Map.of()).get("valid"));
+    assertEquals(false, evaluate(rules, Map.of("encounters", "not-an-array")).get("valid"));
   }
 }

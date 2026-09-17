@@ -1,10 +1,10 @@
 /* Bahmni ANC record -> DHIS2 tracker payload.
-   Datastore key: enable-emr-mapping/bahmni. A PURE FUNCTION of one per-woman
-   record (the shape the envelope expression produces): no variables, no lookups.
+   Datastore key: enable-emr-mapping/bahmni. A pure function of one person
+   record (the shape Bahmni exports per woman): no variables, no lookups.
 
    Emits NO trackedEntity/enrollment/event UIDs — DHIS2 owns identifiers; the
-   mediator looks the woman up by MRN + program after mapping and injects her
-   existing UIDs so a re-push updates instead of duplicating.
+   mediator looks the woman up by the identity attribute after mapping and
+   injects her existing UIDs so a re-push updates instead of duplicating.
 
    Org units carry the facility's DHIS2 org-unit CODE verbatim (the import runs
    with orgUnitIdScheme=CODE). UIDs verified against db-dump/db-dump.sql.gz. */
@@ -24,7 +24,7 @@ local ATTRIBUTE = {
 local DATA_ELEMENT = {
   lnmp: 'w4ky6EkVahL',
   edd: 'Ru01omP2WCQ',
-  gestationalAge: 'w9p8MQDRyMr',  // INTEGER_POSITIVE, sent only when the source sends it
+  gestationalAge: 'w9p8MQDRyMr',  // sent verbatim from the registration encounter
   gaSource: 'RPSgZF1i0hk',        // option set: Clinical | LMP | Ultrasound
   visitNumber: 'bXVD2EMF7UW',     // ANC Visit Number — the event MERGE KEY
 };
@@ -33,21 +33,26 @@ local DATA_ELEMENT = {
 local present(v) = v != null && v != '';
 local attribute(uid, value) = { attribute: uid, value: value };
 local dataValue(uid, value) = { dataElement: uid, value: value };
+// picks the first value in a list that is not null (patient-level fields like
+// dateOfFirstVisit can arrive on any of the woman's encounters)
+local firstNonNull(xs) = local hits = [x for x in xs if x != null];
+                         if std.length(hits) > 0 then hits[0] else null;
 
 /* ---- the record ----------------------------------------------------------- */
 local rec = body;
 local orgUnit = rec.facilityCode;
-local visits = std.sort(rec.visits, function(v) v.visitNumber);
-local lastVisit = visits[std.length(visits) - 1];
-local visitOnes = [v for v in visits if v.visitNumber == 1];
+local encounters = std.sort(rec.encounters, function(e) e.visitNumber);
+local lastEncounter = encounters[std.length(encounters) - 1];
 
 /* enrollment anchor: the recorded first-visit date, else the earliest encounter */
-local enrolledAt = if present(rec.dateOfFirstVisit) then rec.dateOfFirstVisit
-                   else visits[0].encounterDate;
+local enrolledAt = local d = firstNonNull([e.dateOfFirstVisit for e in encounters]);
+                   if d != null then d else encounters[0].encounterDate;
 
 /* ---- events ---------------------------------------------------------------- */
-/* Woman's Profile: one per pregnancy — built ONLY when this record carries
-   visit 1 (follow-up-only records leave the existing profile untouched). */
+/* Woman's Profile: one per pregnancy — built from the encounter that carries
+   the registration data (LNMP + EDD). A follow-up-only record has no such
+   encounter and leaves the existing profile untouched. */
+local registrations = [e for e in encounters if present(e.LNMP) && present(e.EDD)];
 local profileEvents = [
   {
     programStage: STAGE.profile,
@@ -55,45 +60,44 @@ local profileEvents = [
     occurredAt: enrolledAt,
     status: 'COMPLETED',
     completedAt: enrolledAt,
-    /* GA is mapped VERBATIM when Bahmni sends it, omitted when it doesn't —
-       the mapping does no clinical arithmetic. Same for the source label:
-       it only makes sense alongside a GA value. */
     dataValues:
       [
-        dataValue(DATA_ELEMENT.lnmp, rec.lnmp),
-        dataValue(DATA_ELEMENT.edd, rec.edd),
+        dataValue(DATA_ELEMENT.lnmp, r.LNMP),
+        dataValue(DATA_ELEMENT.edd, r.EDD),
       ]
-      + (if present(v1.gestationalAge) then [
-           dataValue(DATA_ELEMENT.gestationalAge, v1.gestationalAge),
+      // GA is mapped verbatim; validation guarantees it on a registration
+      // encounter, and the defensive omit keeps a null from ever being sent
+      + (if present(r.gestationalAge) then [
+           dataValue(DATA_ELEMENT.gestationalAge, r.gestationalAge),
            dataValue(DATA_ELEMENT.gaSource, 'LMP'),
          ] else []),
   }
-  for v1 in visitOnes
+  for r in (if std.length(registrations) > 0 then [registrations[0]] else [])
 ];
 
 /* one exam event per encounter; the visit number is the merge key.
    A visit captured in the source IS a completed contact — COMPLETED, dated
    the day it happened. (Only the SCHEDULE placeholder below stays open: it is
    what the overdue-visit tracking keys off.) */
-local examEvent(v) = {
+local examEvent(e) = {
   programStage: STAGE.exam,
   orgUnit: orgUnit,
-  occurredAt: v.encounterDate,
+  occurredAt: e.encounterDate,
   status: 'COMPLETED',
-  completedAt: v.encounterDate,
-  dataValues: [dataValue(DATA_ELEMENT.visitNumber, v.visitNumber)],
+  completedAt: e.encounterDate,
+  dataValues: [dataValue(DATA_ELEMENT.visitNumber, e.visitNumber)],
 };
 
-/* the next appointment: ONE SCHEDULE event from the LATEST visit's nextDate.
-   It carries NO data values — DHIS2 forbids them on SCHEDULE events (E1315) —
-   so it has no visit number. The merge instead claims the stage's open
-   SCHEDULE event when a real visit arrives: attendance fulfils the
+/* the next appointment: ONE SCHEDULE event from the LATEST encounter's
+   nextDate. It carries NO data values — DHIS2 forbids them on SCHEDULE events
+   (E1315) — so it has no visit number. The merge instead claims the stage's
+   open SCHEDULE event when a real visit arrives: attendance fulfils the
    appointment and the placeholder BECOMES the visit. */
 local scheduledEvents =
-  if present(lastVisit.nextDate) then [{
+  if present(lastEncounter.nextDate) then [{
     programStage: STAGE.exam,
     orgUnit: orgUnit,
-    scheduledAt: lastVisit.nextDate,
+    scheduledAt: lastEncounter.nextDate,
     status: 'SCHEDULE',
   }] else [];
 
@@ -107,7 +111,7 @@ local scheduledEvents =
         attribute(ATTRIBUTE.mrn, std.toString(rec.patientId)),
         attribute(ATTRIBUTE.dateOfBirth, rec.birthDate),
       ] + (
-        /* defensive: validation requires the phone, but never send a null value */
+        // defensive: validation requires the phone, but never send a null value
         if present(rec.phoneNumber) then [attribute(ATTRIBUTE.phone, rec.phoneNumber)] else []
       ),
       enrollments: [
@@ -117,7 +121,7 @@ local scheduledEvents =
           enrolledAt: enrolledAt,
           occurredAt: enrolledAt,
           status: 'ACTIVE',
-          events: profileEvents + [examEvent(v) for v in visits] + scheduledEvents,
+          events: profileEvents + [examEvent(e) for e in encounters] + scheduledEvents,
         },
       ],
     },

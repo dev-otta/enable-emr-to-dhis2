@@ -1,13 +1,13 @@
 /* Bahmni ANC record — structural validation rules.
    Datastore key: enable-emr-validation/bahmni. Evaluated per woman, before the mapping.
 
-   Input:  one per-woman record (see emr-mocks/bahmni/anc-record.json);
+   Input:  one person record (see emr-mocks/bahmni/anc-record.json);
            may be arbitrarily malformed, so every access is guarded.
-   Output: { valid: boolean, missingFields: [string] }
+   Output: { valid: boolean, missingFields: [string], mrn: string|null }
    valid=false becomes an HTTP 400 (single) / an invalid entry (batch), listing
    missingFields verbatim.
 
-   Configuration: Each rule is one row in a table. To add a rule, add a row. */
+   Configuration: each rule is one row in a table. To add a rule, add a row. */
 
 /* ---- helpers ----------------------------------------------------------- */
 local rec = if std.isObject(body) then body else {};
@@ -15,37 +15,42 @@ local rec = if std.isObject(body) then body else {};
 local get(o, f) = if std.isObject(o) && std.objectHas(o, f) then o[f] else null;
 // a value counts as present unless it is null or a blank string
 local present(v) = v != null && !(std.isString(v) && std.length(std.stripChars(v, ' \t')) == 0);
+// the encounter entries, ignoring anything that is not an object
+local encounters = local e = get(rec, 'encounters');
+                   if std.isArray(e) then [x for x in e if std.isObject(x)] else [];
+// an encounter that carries LNMP or EDD is the woman's registration data and
+// feeds the profile — on such an encounter the whole set must be present
+local isRegistration(e) = present(get(e, 'LNMP')) || present(get(e, 'EDD'));
 
-local visits = local v = get(rec, 'visits');
-               if std.isArray(v) then [x for x in v if std.isObject(x)] else [];
-local hasVisitOne = std.length([v for v in visits if get(v, 'visitNumber') == 1]) > 0;
-
-/* ---- record-level rules (policy decisions are visible as rows) --------- */
+/* ---- record-level rules ------------------------------------------------- */
 local recordRules = [
   { field: 'patientId',    ok: present(get(rec, 'patientId')) },
   { field: 'birthDate',    ok: present(get(rec, 'birthDate')) },
   { field: 'facilityCode', ok: present(get(rec, 'facilityCode')) },
   { field: 'phoneNumber',  ok: present(get(rec, 'phoneNumber')) },   // the SMS programme depends on it
-  // lnmp/edd/GA feed the profile, which is only built with visit 1
-  { field: 'lnmp (required with visit 1)', ok: !hasVisitOne || present(get(rec, 'lnmp')) },
-  { field: 'edd (required with visit 1)',  ok: !hasVisitOne || present(get(rec, 'edd')) },
-  { field: 'visits[].gestationalAge (required on visit 1)',
-    ok: std.length([v for v in visits if get(v, 'visitNumber') == 1 && !present(get(v, 'gestationalAge'))]) == 0 },
 ];
 
-/* ---- per-visit rules ---------------------------------------------------- */
-local visitRules =
-  if std.length(visits) == 0 then [{ field: 'visits (at least one encounter)', ok: false }]
+/* ---- per-encounter rules ------------------------------------------------- */
+local encounterRules =
+  if std.length(encounters) == 0 then [{ field: 'encounters (at least one entry)', ok: false }]
   else std.flattenArrays([
     [
-      { field: 'visits[%d].encounterDate' % i, ok: present(get(visits[i], 'encounterDate')) },
-      { field: 'visits[%d].visitNumber' % i,   ok: std.isNumber(get(visits[i], 'visitNumber')) },
+      { field: 'encounters[%d].encounterDate' % i, ok: present(get(encounters[i], 'encounterDate')) },
+      { field: 'encounters[%d].visitNumber' % i,   ok: std.isNumber(get(encounters[i], 'visitNumber')) },
     ]
-    for i in std.range(0, std.length(visits) - 1)
+    // LNMP, EDD and gestationalAge arrive together on the registration
+    // encounter, or not at all (a follow-up-only record builds no profile)
+    + (if isRegistration(encounters[i]) then [
+        { field: 'encounters[%d].LNMP (required with EDD)' % i, ok: present(get(encounters[i], 'LNMP')) },
+        { field: 'encounters[%d].EDD (required with LNMP)' % i, ok: present(get(encounters[i], 'EDD')) },
+        { field: 'encounters[%d].gestationalAge (required with LNMP/EDD)' % i,
+          ok: present(get(encounters[i], 'gestationalAge')) },
+      ] else [])
+    for i in std.range(0, std.length(encounters) - 1)
   ]);
 
 /* ---- verdict ------------------------------------------------------------ */
-local missing = [r.field for r in recordRules + visitRules if !r.ok];
+local missing = [r.field for r in recordRules + encounterRules if !r.ok];
 {
   valid: std.length(missing) == 0,
   missingFields: missing,

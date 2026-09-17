@@ -61,7 +61,7 @@ Then walk through the following steps:
 3. Run `yarn start` to bring up the stack. The first boot takes a few
    minutes while DHIS2 loads the database dump. `yarn health` returns
    `{"status":"OK"}` once the mediator is ready.
-4. To push the reference Bahmni export (8 encounters describing 5 women), run:
+4. To push the reference Bahmni export (5 women with their encounters), run:
 
    ```sh
    yarn push:bahmni-batch
@@ -71,8 +71,10 @@ Then walk through the following steps:
    password `district`). Select the organisation unit
    `Felege Meles Health center` and the programme
    `ANC - RMNCAH - Antenatal care registry`. The five women from the export
-   are registered, each with a completed profile, completed examination
-   events, and one scheduled event for her next appointment.
+   are registered, each with completed examination events and one scheduled
+   event for her next appointment. The women whose export carries the
+   registration data (LNMP, EDD and gestational age) also have a completed
+   profile.
 6. To modify the test payload, i.e. for adding more events or changing the number of patient, go to [emr-mocks/bahmni/anc-records-batch.json](./emr-mocks/bahmni/anc-records-batch.json) and make the required updates. Run `yarn push:bahmni-batch` again to see your changes. 
 
 `yarn push:pulsetech` and `yarn push:bahmni` push single-woman samples the
@@ -96,7 +98,8 @@ The flow is accomplished in a few steps:
    (`POST /api/{source}/anc-records`). Each site authenticates with its own
    API key.
 2. For a batch, the mediator first applies the source's envelope expression,
-   which folds the raw export into one record per woman. This is done to better align with the DHIS2 data model.
+   which turns the raw export into a list of per-woman records. Bahmni
+   already exports one object per woman, so its envelope is a plain unwrap.
 3. Each record is then validated against the source's validation rules. An
    invalid record is rejected with an error message that names the missing
    fields and the patient concerned.
@@ -119,7 +122,7 @@ native structure. The mediator does not require a common format; the
 per-source expressions stored in the DHIS2 datastore can be modified to handle the differences. The samples in
 [`emr-mocks/`](emr-mocks) document both contracts, and
 `emr-mocks/bahmni/anc-records-batch.json` is a reference export Batch from Bahmni. Key contract points, such as the mandatory phone number and
-the fields required with the first visit, are documented in
+the registration fields that must arrive together, are documented in
 [`docs/REFERENCE.md`](docs/REFERENCE.md).
 
 A source exists when its API key is configured in `.env`. Onboarding a new

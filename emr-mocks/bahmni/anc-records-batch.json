@@ -1,122 +1,117 @@
 [
   {
-    "encounterId": 24,
     "patientId": 668462,
     "phoneNumber": "9878787897",
     "birthDate": "2004-01-29",
-    "dateOfFirstVisit": "2026-07-01",
-    "encounterDate": "2026-08-11",
-    "visitNumber": 1,
-    "edd": "2026-07-01",
-    "lnmp": "2026-07-01",
-    "gestationalAge": 6,
-    "nextDate": "2026-07-01",
+    "facilityName": "Felege Meles Health center",
     "facilityCode": "1057888",
-    "facilityName": "Felege Meles Health center"
+    "encounters": [
+      {
+        "encounterId": 16,
+        "encounterDate": "2026-07-01",
+        "dateOfFirstVisit": "2026-07-01",
+        "visitNumber": 1,
+        "gestationalAge": "4",
+        "nextDate": "2026-07-01",
+        "EDD": "2026-07-01",
+        "LNMP": "2026-07-01"
+      }
+    ]
   },
   {
-    "encounterId": 26,
     "patientId": 668465,
     "phoneNumber": "0911223344",
     "birthDate": "1993-08-05",
-    "dateOfFirstVisit": null,
-    "encounterDate": "2026-08-21",
-    "visitNumber": 2,
-    "edd": null,
-    "lnmp": null,
-    "gestationalAge": 34,
-    "nextDate": "2026-09-05",
+    "facilityName": "Felege Meles Health center",
     "facilityCode": "1057888",
-    "facilityName": "Felege Meles Health center"
+    "encounters": [
+      {
+        "encounterId": 26,
+        "encounterDate": "2026-08-21",
+        "dateOfFirstVisit": null,
+        "visitNumber": 2,
+        "gestationalAge": "23",
+        "nextDate": "2026-09-04",
+        "EDD": null,
+        "LNMP": null
+      },
+      {
+        "encounterId": 36,
+        "encounterDate": "2026-08-25",
+        "dateOfFirstVisit": null,
+        "visitNumber": 3,
+        "gestationalAge": "34",
+        "nextDate": "2026-09-05",
+        "EDD": null,
+        "LNMP": null
+      }
+    ]
   },
   {
-    "encounterId": 27,
     "patientId": 668464,
     "phoneNumber": "0555555550",
     "birthDate": "2004-02-26",
-    "dateOfFirstVisit": null,
-    "encounterDate": "2026-08-21",
-    "visitNumber": 3,
-    "edd": null,
-    "lnmp": null,
-    "gestationalAge": 12,
-    "nextDate": "2026-09-04",
+    "facilityName": "Felege Meles Health center",
     "facilityCode": "1057888",
-    "facilityName": "Felege Meles Health center"
+    "encounters": [
+      {
+        "encounterId": 27,
+        "encounterDate": "2026-08-21",
+        "dateOfFirstVisit": null,
+        "visitNumber": 3,
+        "gestationalAge": "12",
+        "nextDate": "2026-09-04",
+        "EDD": null,
+        "LNMP": null
+      }
+    ]
   },
   {
-    "encounterId": 28,
     "patientId": 668463,
     "phoneNumber": "0912221466",
     "birthDate": "2003-06-26",
-    "dateOfFirstVisit": "2026-08-18",
-    "encounterDate": "2026-08-21",
-    "visitNumber": 3,
-    "edd": "2026-12-24",
-    "lnmp": "2026-03-19",
-    "gestationalAge": 33,
-    "nextDate": "2026-09-05",
+    "facilityName": "Felege Meles Health center",
     "facilityCode": "1057888",
-    "facilityName": "Felege Meles Health center"
+    "encounters": [
+      {
+        "encounterId": 28,
+        "encounterDate": "2026-08-21",
+        "dateOfFirstVisit": null,
+        "visitNumber": 4,
+        "gestationalAge": "12",
+        "nextDate": "2026-09-04",
+        "EDD": null,
+        "LNMP": null
+      },
+      {
+        "encounterId": 35,
+        "encounterDate": "2026-08-25",
+        "dateOfFirstVisit": "2026-08-18",
+        "visitNumber": 3,
+        "gestationalAge": "33",
+        "nextDate": "2026-09-05",
+        "EDD": "2026-12-24",
+        "LNMP": "2026-03-19"
+      }
+    ]
   },
   {
-    "encounterId": 32,
     "patientId": 668466,
     "phoneNumber": "0911556677",
     "birthDate": "1994-06-18",
-    "dateOfFirstVisit": "2026-08-25",
-    "encounterDate": "2026-08-24",
-    "visitNumber": 1,
-    "edd": "2027-06-01",
-    "lnmp": "2026-08-25",
-    "gestationalAge": 45,
-    "nextDate": "2026-09-02",
+    "facilityName": "Felege Meles Health center",
     "facilityCode": "1057888",
-    "facilityName": "Felege Meles Health center"
-  },
-  {
-    "encounterId": 34,
-    "patientId": 668466,
-    "phoneNumber": "0911556677",
-    "birthDate": "1994-06-18",
-    "dateOfFirstVisit": "2026-08-25",
-    "encounterDate": "2026-08-25",
-    "visitNumber": 2,
-    "edd": "2027-06-01",
-    "lnmp": "2026-08-25",
-    "gestationalAge": 45,
-    "nextDate": "2026-09-02",
-    "facilityCode": "1057888",
-    "facilityName": "Felege Meles Health center"
-  },
-  {
-    "encounterId": 35,
-    "patientId": 668463,
-    "phoneNumber": "0912221466",
-    "birthDate": "2003-06-26",
-    "dateOfFirstVisit": "2026-08-18",
-    "encounterDate": "2026-08-25",
-    "visitNumber": 4,
-    "edd": "2026-12-24",
-    "lnmp": "2026-03-19",
-    "gestationalAge": 33,
-    "nextDate": "2026-09-05",
-    "facilityCode": "1057888",
-    "facilityName": "Felege Meles Health center"
-  },
-  {
-    "encounterId": 36,
-    "patientId": 668465,
-    "phoneNumber": "0911223344",
-    "birthDate": "1993-08-05",
-    "dateOfFirstVisit": null,
-    "encounterDate": "2026-08-25",
-    "visitNumber": 3,
-    "edd": null,
-    "lnmp": null,
-    "gestationalAge": 34,
-    "nextDate": "2026-09-05",
-    "facilityCode": "1057888",
-    "facilityName": "Felege Meles Health center"
+    "encounters": [
+      {
+        "encounterId": 34,
+        "encounterDate": "2026-08-25",
+        "dateOfFirstVisit": "2026-08-25",
+        "visitNumber": 1,
+        "gestationalAge": "45",
+        "nextDate": "2026-09-02",
+        "EDD": "2027-06-01",
+        "LNMP": "2026-08-25"
+      }
+    ]
   }
 ]

@@ -1,25 +1,19 @@
 {
   "patientId": 668466,
-  "birthDate": "1994-06-18",
   "phoneNumber": "0911556677",
+  "birthDate": "1994-06-18",
+  "facilityName": "Felege Meles Health center",
   "facilityCode": "1057888",
-  "dateOfFirstVisit": "2026-08-25",
-  "lnmp": "2026-08-25",
-  "edd": "2027-06-01",
-  "visits": [
-    {
-      "encounterId": 32,
-      "encounterDate": "2026-08-24",
-      "visitNumber": 1,
-      "gestationalAge": 45,
-      "nextDate": "2026-09-02"
-    },
+  "encounters": [
     {
       "encounterId": 34,
       "encounterDate": "2026-08-25",
-      "visitNumber": 2,
-      "gestationalAge": 45,
-      "nextDate": "2026-09-02"
+      "dateOfFirstVisit": "2026-08-25",
+      "visitNumber": 1,
+      "gestationalAge": "45",
+      "nextDate": "2026-09-02",
+      "EDD": "2027-06-01",
+      "LNMP": "2026-08-25"
     }
   ]
 }

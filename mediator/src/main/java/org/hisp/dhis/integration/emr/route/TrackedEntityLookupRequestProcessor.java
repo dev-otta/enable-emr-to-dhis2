@@ -51,6 +51,7 @@ public class TrackedEntityLookupRequestProcessor implements Processor {
     JsonNode payload =
         OBJECT_MAPPER.readTree(exchange.getVariable("trackerPayload", String.class));
     JsonNode trackedEntity = payload.path("trackedEntities").path(0);
+    exchange.setVariable("facility", trackedEntity.path("orgUnit").asText("unknown"));
 
     String program = trackedEntity.path("enrollments").path(0).path("program").asText("");
     String mrn = null;

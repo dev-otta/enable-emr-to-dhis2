@@ -35,10 +35,12 @@ public class PulseTechValidationDataSonnetTestCase extends AbstractDataSonnetTes
   public void testReferenceSamplesAreValid() throws IOException {
     // The shipped samples must always pass their own shipped rules.
     assertEquals(
-        Map.of("valid", true, "missingFields", List.of(), "mrn", "719685"),
+        Map.of(
+            "valid", true, "missingFields", List.of(), "mrn", "719685", "facility", "1057888"),
         evaluate(rules, readEmrSample("pulsetech/anc-record.json")));
     assertEquals(
-        Map.of("valid", true, "missingFields", List.of(), "mrn", "804112"),
+        Map.of(
+            "valid", true, "missingFields", List.of(), "mrn", "804112", "facility", "1057888"),
         evaluate(rules, readEmrSample("pulsetech/anc-record-single-visit.json")));
   }
 

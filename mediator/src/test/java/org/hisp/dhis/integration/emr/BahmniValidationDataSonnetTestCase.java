@@ -38,7 +38,8 @@ public class BahmniValidationDataSonnetTestCase extends AbstractDataSonnetTestCa
     // The verdict also names WHO it is about — the 400 carries it so a vendor
     // pushing a whole batch knows which patient to fix.
     assertEquals(
-        Map.of("valid", true, "missingFields", List.of(), "mrn", "668466"),
+        Map.of(
+            "valid", true, "missingFields", List.of(), "mrn", "668466", "facility", "1057888"),
         evaluate(rules, readEmrSample("bahmni/anc-record.json")));
   }
 

@@ -59,10 +59,8 @@
                   when:
                     - simple: "${body[status]} != 'OK'"
                       steps:
-                        # Log hygiene: the report can echo record values, so the full body
-                        # only appears at DEBUG. The caller receives the report either way.
                         - log:
-                            message: "DHIS2 tracker import reported errors for source '${variable.source}' (returning 409)"
+                            message: "DHIS2 tracker import reported errors for ${variable.source}-${variable.facility} (returning 409)"
                             loggingLevel: ERROR
                         - log:
                             message: "Import report: ${body}"
@@ -72,7 +70,7 @@
                             constant: "409"
                   otherwise:
                     steps:
-                      - log: "DHIS2 tracker import OK for source '${variable.source}' (${body[stats]})"
+                      - log: "DHIS2 tracker import OK for ${variable.source}-${variable.facility} (${body[stats]})"
               - marshal:
                   json: {}
               - convertBodyTo:
@@ -232,7 +230,7 @@
                'reportMode': ['{{dhis2.import.report-mode}}'],
                'orgUnitIdScheme': ['{{dhis2.import.org-unit-id-scheme}}'],
                'skipRuleEngine': ['{{dhis2.import.skip-rule-engine}}']]
-        - log: "Importing '${variable.source}' record into DHIS2 tracker (synchronous)"
+        - log: "Importing record from ${variable.source}-${variable.facility} into DHIS2 tracker (synchronous)"
         - to:
             description: POST to /api/tracker via the DHIS2 component
             uri: dhis2:post/resource

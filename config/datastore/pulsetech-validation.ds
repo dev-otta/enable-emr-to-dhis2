@@ -47,4 +47,6 @@ local missing = [r.field for r in recordRules + followupRules if !r.ok];
   missingFields: missing,
   // who the verdict is about; surfaces in the 400 (null when the id is missing)
   mrn: if present(get(rec, 'pnt_mrn')) then std.toString(get(rec, 'pnt_mrn')) else null,
+  facility: if present(get(rec, 'facility_dhis2_org_unit_code'))
+            then std.toString(get(rec, 'facility_dhis2_org_unit_code')) else null,
 }

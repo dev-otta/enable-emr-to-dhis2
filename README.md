@@ -5,6 +5,7 @@
 3. [Overview](#overview)
    + [EMRs (PulseTech and Bahmni)](#emrs-pulsetech-and-bahmni)
    + [Mediator](#mediator)
+   + [Management console](#management-console)
    + [DHIS2](#dhis2)
    + [SMS campaign script](#sms-campaign-script)
 4. [Error contract](#error-contract)
@@ -145,6 +146,33 @@ sources live in [`config/datastore/`](config/datastore) and can be packed from t
 | `enable-emr-envelope/<source>` | the raw batch body | a list of per-woman records |
 | `enable-emr-validation/<source>` | one record | `{valid, missingFields, mrn}` |
 | `enable-emr-mapping/<source>` | one record | the DHIS2 tracker payload |
+
+### Management console
+
+A [Hawtio](https://hawt.io/) management console is available for server
+admins. It shows the Camel routes with live exchange counts and route
+diagrams, the JVM internals over JMX, and a window of recent log messages,
+where every import names its source EMR and facility code (for example
+`DHIS2 tracker import OK for pulsetech-1057888 ({created=6, updated=0, deleted=0, ignored=0, total=6})`).
+
+The console runs on its own management port (9010) and should not be exposed
+through the reverse proxy. On the demo stack it is available directly at
+`http://localhost:9010/management/hawtio`. To view the console on a server,
+connect through the server with an SSH tunnel and open the same address in
+your own browser:
+
+```sh
+ssh -L 9010:localhost:9010 user@my-server
+```
+
+![The Hawtio log view](docs/hawtio-logs.png)
+
+The log view shows a limited window of recent messages, not the full
+history (to view the full history, use `docker compose logs mediator` or view the persisted logs). To increase the
+window, or change the refresh rate, open the profile menu in the top right
+corner and go to Preferences, then Server Logs, and raise the cache size.
+Set `MEDIATOR_MANAGEMENT_PORT=-1` in `.env` to disable the console
+entirely.
 
 ### DHIS2
 

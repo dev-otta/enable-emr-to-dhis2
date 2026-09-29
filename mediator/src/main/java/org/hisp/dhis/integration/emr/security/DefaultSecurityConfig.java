@@ -53,6 +53,9 @@ public class DefaultSecurityConfig {
   @Value("${mediator.batch.max-request-bytes:20971520}")
   private long batchMaxRequestBytes;
 
+  @Value("${management.server.port:-1}")
+  private int managementPort;
+
   public DefaultSecurityConfig(ApiKeysProperties apiKeysProperties) {
     this.apiKeysProperties = apiKeysProperties;
   }
@@ -76,6 +79,9 @@ public class DefaultSecurityConfig {
               // 403 for the caller — permit it so a real 500 (with its JSON body) surfaces.
               a.dispatcherTypeMatchers(DispatcherType.ERROR).permitAll();
               a.requestMatchers("/api/health").permitAll();
+              if (managementPort > 0) {
+                a.requestMatchers(request -> request.getLocalPort() == managementPort).permitAll();
+              }
               // One rule per ENABLED source, straight from configuration.
               enabledKeys
                   .keySet()

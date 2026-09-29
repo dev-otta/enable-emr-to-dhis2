@@ -93,6 +93,7 @@ services:
       DHIS2_PASSWORD: ${MEDIATOR_DHIS2_PASSWORD:-district}
     ports:
       - "${MEDIATOR_PORT:-9070}:9070"
+      - "127.0.0.1:${MEDIATOR_MANAGEMENT_PORT:-9010}:9010"
 
   # ---- Seed: writes the per-source datastore expressions, then exits --
   # Three keys per EMR source: batch envelope (enable-emr-envelope/<source>),

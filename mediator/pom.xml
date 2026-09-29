@@ -22,6 +22,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <camel.version>4.13.0</camel.version>
         <spring.boot-version>3.5.3</spring.boot-version>
+        <hawtio.version>5.2.1</hawtio.version>
     </properties>
 
     <build>
@@ -98,7 +99,6 @@
     </dependencyManagement>
 
     <dependencies>
-        <!-- Web server (also serves the HTTPS platform-http endpoints) + security -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
@@ -107,8 +107,6 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
-
-        <!-- Camel core + YAML routes + HTTP ingress -->
         <dependency>
             <groupId>org.apache.camel.springboot</groupId>
             <artifactId>camel-spring-boot-starter</artifactId>
@@ -119,9 +117,12 @@
         </dependency>
         <dependency>
             <groupId>org.apache.camel.springboot</groupId>
+            <artifactId>camel-spring-boot-xml-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.camel.springboot</groupId>
             <artifactId>camel-platform-http-starter</artifactId>
         </dependency>
-        <!-- REST DSL: the single parameterized ingest endpoint /api/{source}/anc-record -->
         <dependency>
             <groupId>org.apache.camel.springboot</groupId>
             <artifactId>camel-rest-starter</artifactId>
@@ -130,9 +131,6 @@
             <groupId>org.apache.camel.springboot</groupId>
             <artifactId>camel-jackson-starter</artifactId>
         </dependency>
-
-        <!-- Mapping: DataSonnet expression fetched from the datastore and applied
-             dynamically via Groovy (the fhir-sync-agent / LIS pattern) -->
         <dependency>
             <groupId>org.apache.camel.springboot</groupId>
             <artifactId>camel-datasonnet-starter</artifactId>
@@ -141,17 +139,28 @@
             <groupId>org.apache.camel.springboot</groupId>
             <artifactId>camel-groovy-starter</artifactId>
         </dependency>
-
-        <!-- DHIS2 component: datastore read + org unit lookup + tracker write -->
         <dependency>
             <groupId>org.apache.camel.springboot</groupId>
             <artifactId>camel-dhis2-starter</artifactId>
         </dependency>
-
-        <!-- Camel JMX management -->
         <dependency>
             <groupId>org.apache.camel.springboot</groupId>
             <artifactId>camel-management-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.hawt</groupId>
+            <artifactId>hawtio-springboot</artifactId>
+            <version>${hawtio.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.hawt</groupId>
+            <artifactId>hawtio-log</artifactId>
+            <version>${hawtio.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.hawt</groupId>
+            <artifactId>hawtio-log-logback</artifactId>
+            <version>${hawtio.version}</version>
         </dependency>
 
         <!-- Tests -->
@@ -172,9 +181,6 @@
             <version>3.13.1</version>
             <scope>test</scope>
         </dependency>
-        <!-- Integration tests (*IT, run by failsafe in `mvn verify`) boot a REAL
-             DHIS2 + the ENABLE dump via Testcontainers — the pattern from
-             dhis2/integration-dhis-rapidpro. Plain `mvn test` stays Docker-free. -->
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>testcontainers</artifactId>

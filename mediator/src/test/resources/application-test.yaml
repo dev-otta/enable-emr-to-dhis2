@@ -1,11 +1,10 @@
-# Route-test configuration: HTTPS off (plain HTTP against the random test port),
-# fixed test API keys (>= 16 chars — the startup guardrail enforces key length),
-# and dhis2.api-url pointing at the WireMock DHIS2 stand-in (injected via
-# @DynamicPropertySource in the test classes).
-
 server:
   ssl:
     enabled: false
+
+management:
+  server:
+    port: -1
 
 camel:
   springboot:

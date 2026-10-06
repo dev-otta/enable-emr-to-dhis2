@@ -91,6 +91,9 @@ services:
       # Demo defaults to admin; switch to a least-privilege account (docs/REFERENCE.md §6).
       DHIS2_USERNAME: ${MEDIATOR_DHIS2_USERNAME:-admin}
       DHIS2_PASSWORD: ${MEDIATOR_DHIS2_PASSWORD:-district}
+      # Console login (unset = no login, console only accessed through server; see .env.example).
+      MEDIATOR_CONSOLE_USER: ${MEDIATOR_CONSOLE_USER:-operator}
+      MEDIATOR_CONSOLE_PASSWORD: ${MEDIATOR_CONSOLE_PASSWORD:-}
     ports:
       - "${MEDIATOR_PORT:-9070}:9070"
       - "127.0.0.1:${MEDIATOR_MANAGEMENT_PORT:-9010}:9010"

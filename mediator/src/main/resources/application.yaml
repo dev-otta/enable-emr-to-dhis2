@@ -9,6 +9,10 @@ server:
     key-alias: ${MEDIATOR_KEYSTORE_ALIAS:mediator}
   tomcat:
     max-swallow-size: ${MEDIATOR_BATCH_MAX_REQUEST_BYTES:20971520}
+  servlet:
+    session:
+      cookie:
+        same-site: strict
 
 camel:
   springboot:
@@ -36,6 +40,7 @@ management:
   health:
     show-details: always
 
+# Off by default. Spring Security gates the management port (DefaultSecurityConfig)
 hawtio:
   authenticationEnabled: false
 
@@ -49,6 +54,12 @@ api:
     bahmni: ${MEDIATOR_API_KEY_BAHMNI:}
 
 mediator:
+  # Setting a password puts a login on the management console (form + basic auth),
+  # which is what allows exposing it through the reverse proxy. Unset (default):
+  # the console is open but loopback-only — reachability is the access control.
+  console:
+    user: ${MEDIATOR_CONSOLE_USER:operator}
+    password: ${MEDIATOR_CONSOLE_PASSWORD:}
   max-request-bytes: ${MEDIATOR_MAX_REQUEST_BYTES:1048576}
   throttle:
     max-requests: ${MEDIATOR_THROTTLE_MAX_REQUESTS:10}

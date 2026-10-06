@@ -27,7 +27,11 @@ services:
       DHIS2_USERNAME: ${MEDIATOR_DHIS2_USERNAME:?Set MEDIATOR_DHIS2_USERNAME}
       DHIS2_PASSWORD: ${MEDIATOR_DHIS2_PASSWORD:?Set MEDIATOR_DHIS2_PASSWORD}
 
-      # ---- guardrails (defaults apply if unset) ----
+      # console login (unset = no login, server access only)
+      MEDIATOR_CONSOLE_USER: ${MEDIATOR_CONSOLE_USER:-operator}
+      MEDIATOR_CONSOLE_PASSWORD: ${MEDIATOR_CONSOLE_PASSWORD:-}
+
+      # guardrails (defaults apply if unset)
       MEDIATOR_MAX_REQUEST_BYTES: ${MEDIATOR_MAX_REQUEST_BYTES:-1048576}
       MEDIATOR_THROTTLE_MAX_REQUESTS: ${MEDIATOR_THROTTLE_MAX_REQUESTS:-10}
       MEDIATOR_THROTTLE_PERIOD_MILLIS: ${MEDIATOR_THROTTLE_PERIOD_MILLIS:-1000}
@@ -45,6 +49,10 @@ services:
     #   - ./certs:/certs:ro
     ports:
       - "${MEDIATOR_PORT:-9070}:9070"
+      # Hawtio/actuator console — published to the server's loopback only.
+      # Reached over an SSH tunnel, or through the reverse proxy when a
+      # console login is configured (README: Management console).
+      - "127.0.0.1:${MEDIATOR_MANAGEMENT_PORT:-9010}:9010"
     healthcheck:
       test: ["CMD-SHELL", "curl -skf https://127.0.0.1:9070/api/health || curl -sf http://127.0.0.1:9070/api/health"]
       start_period: 60s

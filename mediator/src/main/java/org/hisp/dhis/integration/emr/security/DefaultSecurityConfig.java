@@ -1,41 +1,39 @@
 package org.hisp.dhis.integration.emr.security;
 
+import static org.springframework.security.config.Customizer.withDefaults;
+
 import jakarta.servlet.DispatcherType;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.web.context.WebServerApplicationContext;
+import org.springframework.boot.web.context.WebServerInitializedEvent;
+import org.springframework.context.ApplicationListener;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.userdetails.User;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 /**
- * Locks down the mediator. Adapted from dhis2/reference-civil-registry-lookup's
- * DefaultSecurityConfig, extended to one API key per EMR site (the IG's transport rule) — and the
- * authorization rules are BUILT FROM CONFIGURATION: for every enabled source in {@link
- * ApiKeysProperties}, {@code /api/<source>/**} requires that source's role. No source names are
- * hardcoded here; enabling or disabling a pipeline is purely an environment change.
+ * Two filter chains: per-source API keys on the app port, an optional login on the management
+ * port.
  *
- * <p>Rules:
- *
- * <ul>
- *   <li>requests above the size cap are rejected first (413)
- *   <li>/api/health is public (so health checks work without a key)
- *   <li>/api/&lt;source&gt;/** requires that source's site key — for enabled sources only; a
- *       disabled or unknown source's path falls through to denyAll
- *   <li>everything else is denied
- * </ul>
- *
- * <p>Fail-fast at startup — the application refuses to run when: no source is enabled at all; any
- * configured key is the placeholder or shorter than {@value #MIN_KEY_LENGTH} characters; or two
- * sources share a key (a key must identify exactly one site so it can be rotated and revoked
- * independently). A copied-as-is deployment can therefore never run wide open.
+ * <p>Console contract: without mediator.console.password the management port has NO login — safe
+ * only because the compose files publish that port to loopback. With a password, the whole port
+ * (Hawtio, Jolokia, actuator) requires a form/basic login. hawtio.authenticationEnabled stays
+ * false either way: hawtio's own login would cover its UI pages but not Jolokia, which is where
+ * the data comes from. Logout: /logout on the management port.
  */
 @Configuration
 @EnableWebSecurity
@@ -44,6 +42,7 @@ public class DefaultSecurityConfig {
 
   static final String PLACEHOLDER_KEY = "CHANGE_ME";
   static final int MIN_KEY_LENGTH = 16;
+  static final int MIN_CONSOLE_PASSWORD_LENGTH = 12;
 
   private final ApiKeysProperties apiKeysProperties;
 
@@ -53,14 +52,70 @@ public class DefaultSecurityConfig {
   @Value("${mediator.batch.max-request-bytes:20971520}")
   private long batchMaxRequestBytes;
 
-  @Value("${management.server.port:-1}")
-  private int managementPort;
+  // Captured at startup. The configured port can't be used in the securityMatcher:
+  // it is 0 (random) in tests.
+  private final AtomicInteger managementPort = new AtomicInteger(-1);
+
+  @Value("${mediator.console.user:operator}")
+  private String consoleUser;
+
+  @Value("${mediator.console.password:}")
+  private String consolePassword;
 
   public DefaultSecurityConfig(ApiKeysProperties apiKeysProperties) {
     this.apiKeysProperties = apiKeysProperties;
   }
 
+  private boolean consoleLoginEnabled() {
+    return !consolePassword.isBlank();
+  }
+
   @Bean
+  ApplicationListener<WebServerInitializedEvent> managementPortTracker() {
+    return event -> {
+      if ("management"
+          .equals(
+              ((WebServerApplicationContext) event.getApplicationContext()).getServerNamespace())) {
+        managementPort.set(event.getWebServer().getPort());
+      }
+    };
+  }
+
+  @Bean
+  @Order(1)
+  SecurityFilterChain consoleFilterChain(HttpSecurity http) throws Exception {
+    http.securityMatcher(
+        request -> {
+          int port = managementPort.get();
+          return port > 0 && request.getLocalPort() == port;
+        });
+    // CSRF is covered by the same-site=strict session cookie (application.yaml).
+    http.csrf(csrf -> csrf.disable());
+
+    if (!consoleLoginEnabled()) {
+      http.authorizeHttpRequests(a -> a.anyRequest().permitAll());
+      return http.build();
+    }
+
+    requireSaneConsolePassword(consoleUser, consolePassword);
+    http.authorizeHttpRequests(a -> a.anyRequest().authenticated())
+        .formLogin(withDefaults())
+        .httpBasic(withDefaults());
+    return http.build();
+  }
+
+  @Bean
+  UserDetailsService consoleUserDetailsService() {
+    if (!consoleLoginEnabled()) {
+      return new InMemoryUserDetailsManager();
+    }
+    String password = consolePassword.startsWith("{") ? consolePassword : "{noop}" + consolePassword;
+    return new InMemoryUserDetailsManager(
+        User.withUsername(consoleUser).password(password).roles("ADMIN").build());
+  }
+
+  @Bean
+  @Order(2)
   SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
     Map<String, String> enabledKeys = apiKeysProperties.enabledKeys();
     requireSaneKeys(enabledKeys);
@@ -69,20 +124,11 @@ public class DefaultSecurityConfig {
         .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
         .authorizeHttpRequests(
             a -> {
-              // Camel's platform-http processes the request asynchronously and re-dispatches
-              // it. The original REQUEST dispatch already enforced the API key; the ASYNC
-              // re-dispatch must be permitted or Spring Security re-evaluates it as anonymous
-              // and returns 403.
+              // Camel platform-http re-dispatches requests asynchronously. API key
+              // was already enforced on the original REQUEST dispatch.
               a.dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll();
-              // The ERROR dispatch renders Boot's /error page for anything that escaped
-              // Camel's handlers. Denying it turns every internal failure into an opaque
-              // 403 for the caller — permit it so a real 500 (with its JSON body) surfaces.
               a.dispatcherTypeMatchers(DispatcherType.ERROR).permitAll();
               a.requestMatchers("/api/health").permitAll();
-              if (managementPort > 0) {
-                a.requestMatchers(request -> request.getLocalPort() == managementPort).permitAll();
-              }
-              // One rule per ENABLED source, straight from configuration.
               enabledKeys
                   .keySet()
                   .forEach(
@@ -98,6 +144,25 @@ public class DefaultSecurityConfig {
             ApiKeyAuthenticationFilter.class);
 
     return http.build();
+  }
+
+  private static void requireSaneConsolePassword(String user, String password) {
+    if (user.isBlank()) {
+      throw new IllegalStateException(
+          "Refusing to start: MEDIATOR_CONSOLE_PASSWORD is set but MEDIATOR_CONSOLE_USER is blank.");
+    }
+    boolean plaintext = password.startsWith("{noop}") || !password.startsWith("{");
+    String effective = password.startsWith("{noop}") ? password.substring("{noop}".length()) : password;
+    if (password.contains(PLACEHOLDER_KEY)
+        || (plaintext && effective.length() < MIN_CONSOLE_PASSWORD_LENGTH)) {
+      throw new IllegalStateException(
+          "Refusing to start: the console password is set as the placeholder or a plaintext shorter "
+              + "than "
+              + MIN_CONSOLE_PASSWORD_LENGTH
+              + " characters. Set a long password, or preferably a bcrypt hash: "
+              + "htpasswd -bnBC 10 \"\" 'password' | tr -d ':\\n' "
+              + "(prefix the result with {bcrypt}; escape every $ as $$ in .env).");
+    }
   }
 
   private static void requireSaneKeys(Map<String, String> enabledKeys) {

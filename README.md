@@ -155,15 +155,40 @@ diagrams, the JVM internals over JMX, and a window of recent log messages,
 where every import names its source EMR and facility code (for example
 `DHIS2 tracker import OK for pulsetech-1057888 ({created=6, updated=0, deleted=0, ignored=0, total=6})`).
 
-The console runs on its own management port (9010) and should not be exposed
-through the reverse proxy. On the demo stack it is available directly at
-`http://localhost:9010/management/hawtio`. To view the console on a server,
-connect through the server with an SSH tunnel and open the same address in
-your own browser:
+The console runs on its own management port (9010). By default it has no
+login and is therefore never exposed through the reverse proxy: the compose
+files publish the port to the machine's loopback only. On the demo stack it
+is available directly at `http://localhost:9010/management/hawtio`. To view
+the console on a server, connect through the server with an SSH tunnel and
+open the same address in your own browser:
 
 ```sh
 ssh -L 9010:localhost:9010 user@my-server
 ```
+
+To make the console available on the public URL instead, set a console
+account in `.env` (`MEDIATOR_CONSOLE_USER` and `MEDIATOR_CONSOLE_PASSWORD`,
+see `.env.example` for the bcrypt variant). This puts a login page on the
+management port, and the reverse proxy can then expose it under the same
+path, with a rate limit against password guessing:
+
+```nginx
+limit_req_zone $binary_remote_addr zone=console:1m rate=10r/m;
+
+location /management/ {
+    limit_req zone=console burst=20 nodelay;
+    proxy_pass http://127.0.0.1:9010/management/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+The console is then at `https://my-server/management/hawtio` (the login
+form is served at `/login` on the same host). JMX attribute writes are
+disabled at the Jolokia layer regardless of login
+(`mediator/src/main/resources/jolokia-access.xml`), so a console session can
+inspect the mediator but not reconfigure the JVM.
 
 ![The Hawtio log view](docs/hawtio-logs.png)
 

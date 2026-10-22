@@ -24,13 +24,15 @@ public final class TrackerQueries {
       "trackedEntity,attributes[attribute,value],enrollments[enrollment,status,"
           + "events[event,programStage,status,occurredAt,scheduledAt,dataValues[dataElement,value]]]";
 
+  public static final String FACILITY = "1057888";
+
   private TrackerQueries() {}
 
   public static List<JsonNode> findByMrn(String mrn) {
     String body =
         Dhis2Environment.get(
             "tracker/trackedEntities?program=" + PROGRAM + "&ouMode=ACCESSIBLE"
-                + "&filter=" + MRN_ATTRIBUTE + ":eq:" + mrn
+                + "&filter=" + MRN_ATTRIBUTE + ":eq:" + FACILITY + "-" + mrn
                 + "&fields=" + FIELDS + "&paging=false");
     try {
       JsonNode root = TestPayloads.OBJECT_MAPPER.readTree(body);

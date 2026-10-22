@@ -48,7 +48,7 @@ public class TrackerRoundTripIT extends AbstractDhis2IT {
     List<JsonNode> instances = findByMrn("719685");
     assertEquals(1, instances.size());
     JsonNode woman = instances.get(0);
-    assertEquals("719685", attributeValue(woman, MRN_ATTRIBUTE));
+    assertEquals("1057888-719685", attributeValue(woman, MRN_ATTRIBUTE));
     assertEquals("Abeba", attributeValue(woman, "sB1IHYu2xQT"));
     assertTrue(events(woman).stream().anyMatch(e -> PROFILE_STAGE.equals(e.path("programStage").asText())));
     long exams =

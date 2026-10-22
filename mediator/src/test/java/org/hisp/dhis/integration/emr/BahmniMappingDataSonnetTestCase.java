@@ -45,14 +45,31 @@ public class BahmniMappingDataSonnetTestCase extends AbstractDataSonnetTestCase 
   }
 
   @Test
+  public void testIdentityIsScopedByFacilitySoPatientIdsCannotCollideAcrossInstances()
+      throws IOException {
+    // patientId is only unique within one Bahmni instance. The identity value is
+    // '<facility code>-<patientId>', so the same id from two sites never matches
+    // the same woman in DHIS2.
+    Map<String, Object> record = readEmrSample("bahmni/anc-record.json");
+    assertTrue(
+        attributes(evaluate(mapping, record))
+            .contains(Map.of("attribute", "OYuDdqr2MvX", "value", "1057888-668466")));
+
+    record.put("facilityCode", "9990001");
+    assertTrue(
+        attributes(evaluate(mapping, record))
+            .contains(Map.of("attribute", "OYuDdqr2MvX", "value", "9990001-668466")));
+  }
+
+  @Test
   public void testPhoneRidesAlongAndANullPhoneIsOmittedDefensively() throws IOException {
     // The contract requires the phone (validation enforces it); the mapping still
     // guards defensively — a null must be OMITTED, never sent as a null value.
     Map<String, Object> record = readEmrSample("bahmni/anc-record.json");
     List<Map<String, Object>> attributes = attributes(evaluate(mapping, record));
     assertTrue(attributes.contains(Map.of("attribute", "RJxLa3nITB3", "value", "0911556677")));
-    // ... and the MRN goes in as a STRING (the unique identity attribute).
-    assertTrue(attributes.contains(Map.of("attribute", "OYuDdqr2MvX", "value", "668466")));
+    // ... and the identity attribute is the facility-scoped MRN, as a string.
+    assertTrue(attributes.contains(Map.of("attribute", "OYuDdqr2MvX", "value", "1057888-668466")));
 
     record.put("phoneNumber", null);
     List<Map<String, Object>> withoutPhone = attributes(evaluate(mapping, record));

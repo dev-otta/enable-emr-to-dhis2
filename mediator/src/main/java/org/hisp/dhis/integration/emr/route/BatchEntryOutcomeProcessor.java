@@ -23,8 +23,8 @@ import org.springframework.stereotype.Component;
  * </ul>
  *
  * <p>Every row carries the entry's {@code index}; when the entry got far enough to be mapped,
- * the row also carries its {@code mrn} (read from the mapped payload via the configured identity
- * attribute) so operators can correlate without counting.
+ * the row also carries its {@code mrn} — the MRN as the EMR sent it (the facility prefix of the
+ * stored identity is stripped) so operators can correlate without counting.
  */
 @Component("batchEntryOutcome")
 public class BatchEntryOutcomeProcessor implements Processor {
@@ -95,11 +95,17 @@ public class BatchEntryOutcomeProcessor implements Processor {
       return null; // the entry failed before mapping
     }
     try {
-      JsonNode attributes =
-          OBJECT_MAPPER.readTree(payloadJson).path("trackedEntities").path(0).path("attributes");
-      for (JsonNode attribute : attributes) {
+      JsonNode trackedEntity =
+          OBJECT_MAPPER.readTree(payloadJson).path("trackedEntities").path(0);
+      String facilityPrefix = trackedEntity.path("orgUnit").asText("") + "-";
+      for (JsonNode attribute : trackedEntity.path("attributes")) {
         if (identityAttribute.equals(attribute.path("attribute").asText())) {
-          return attribute.path("value").asText();
+          String identity = attribute.path("value").asText();
+          // The stored identity is '<facility code>-<MRN>' (MRNs are only unique
+          // within one facility); the response echoes the MRN the EMR itself sent.
+          return identity.startsWith(facilityPrefix)
+              ? identity.substring(facilityPrefix.length())
+              : identity;
         }
       }
     } catch (Exception ignored) {

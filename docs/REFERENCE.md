@@ -146,10 +146,14 @@ appointment becomes the visit. Anything unmatched has no identifier and is
 created by DHIS2. Each existing event is claimed at most once.
 
 The identity attribute is configuration
-(`DHIS2_TRACKER_IDENTITY_ATTRIBUTE`). The project decision is to identify
-women by their phone number (`RJxLa3nITB3`), which both EMRs send and the
-SMS programme already depends on. The default value in the reference implementaiton is the
-Client MRN attribute (`OYuDdqr2MvX`).
+(`DHIS2_TRACKER_IDENTITY_ATTRIBUTE`); the default is the Client MRN
+attribute (`OYuDdqr2MvX`). An MRN is only unique within one facility, so
+both mappings store the value namespaced with the facility's org-unit code
+(`1029107-719685`) — the same MRN at two sites can therefore never match,
+and the ACCESSIBLE-scoped lookup stays safe. The earlier idea of
+identifying women by phone number was dropped after the first real export:
+a phone is neither stable (a corrected number must not split a woman in
+two) nor unique (one Akaki number covers 14 women).
 
 Whatever the attribute, the same properties hold. The attribute is unique
 in DHIS2, so two concurrent first pushes for the same woman end in one
@@ -249,9 +253,6 @@ again, which is safe because imports are idempotent. Batches are capped
 rather than streamed; an unbounded historical backfill would need a
 streaming format later. Monitoring is the health endpoint plus logs.
 
-The identity switch from MRN to phone number (section 3) is decided but not
-yet implemented.
-
 No pregnancy-outcome stop condition is imported, because neither EMR sends
 an outcome yet. Until one does, nothing in the tracker marks a pregnancy as
 ended, which the SMS programme needs to stop its campaigns; its current
@@ -261,8 +262,11 @@ Imported women have no value for the Age attribute. The Capture app's
 program rule fills it the first time a human edits the record. This is
 cosmetic; nothing reads the attribute.
 
-The uniqueness scope of Bahmni's `patientId` across separate Bahmni
-instances is an open question with the Bahmni team. If it turns out to be
-unique per instance only, the mapping should prefix it with a facility or
-instance code. The question loses most of its weight once the identity
-switch to phone numbers is made.
+Identifier uniqueness across instances is settled: both mappings prefix
+the identity value with the facility code (section 3), so per-instance
+MRNs and `patientId`s cannot collide. A woman who moves between facilities
+still becomes two tracked entities — the EMRs themselves do not link her —
+and linking her across sites awaits a national identifier (Fayda) in the
+exports; the programme already carries an attribute for it. Candidate
+duplicates can be found by phone-number overlap and merged with DHIS2's
+tracker deduplication.

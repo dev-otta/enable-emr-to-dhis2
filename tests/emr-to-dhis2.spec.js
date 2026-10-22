@@ -9,7 +9,8 @@
 // (the tests read the API keys and DHIS2 credentials from the environment).
 //
 // The mediator never generates UIDs — DHIS2 does — so the tests find women the
-// same way the mediator does: by MRN attribute + program.
+// same way the mediator does: by the facility-scoped MRN ('<facility code>-<MRN>',
+// MRNs are only unique within one facility) + program.
 
 const { expect, test } = require("@playwright/test");
 const fs = require("fs");
@@ -32,6 +33,8 @@ const PROFILE_STAGE = "iF5roNU7QWm";
 const EXAM_STAGE = "JqW7c9HYjVr";
 const VISIT_NUMBER_DE = "bXVD2EMF7UW";
 
+// Both samples belong to this facility; the STORED identity is '<facility>-<mrn>'.
+const FACILITY = "1057888";
 const PULSETECH = { record: readSample("pulsetech/anc-record.json"), mrn: "719685" };
 const BAHMNI = { record: readSample("bahmni/anc-record.json"), mrn: "668466" };
 
@@ -55,13 +58,14 @@ function basicAuth() {
   );
 }
 
-// Finds women exactly the way the mediator's idempotency lookup does.
+// Finds women exactly the way the mediator's idempotency lookup does:
+// by the facility-scoped identity value.
 async function findByMrn(request, mrn) {
   const response = await request.get(`${DHIS2}/api/tracker/trackedEntities`, {
     params: {
       program: PROGRAM,
       ouMode: "ACCESSIBLE",
-      filter: `${MRN_ATTRIBUTE}:eq:${mrn}`,
+      filter: `${MRN_ATTRIBUTE}:eq:${FACILITY}-${mrn}`,
       fields:
         "trackedEntity,attributes[attribute,value],enrollments[enrollment,status,events[event,programStage,status,occurredAt,scheduledAt,dataValues[dataElement,value]]]",
     },
@@ -102,7 +106,7 @@ test("PulseTech record lands as a tracked entity with enrollment and events", as
   expect(te.trackedEntity).toMatch(/^[A-Za-z][A-Za-z0-9]{10}$/);
 
   // Identity attributes (what the SMS programme needs).
-  expect(attributeValue(te, MRN_ATTRIBUTE)).toBe("719685");
+  expect(attributeValue(te, MRN_ATTRIBUTE)).toBe("1057888-719685");
   expect(attributeValue(te, "sB1IHYu2xQT")).toBe("Abeba"); // First name
   expect(attributeValue(te, "RJxLa3nITB3")).toBe("0912345678"); // SMS phone
 
@@ -176,7 +180,7 @@ test("Bahmni record lands: nameless woman with her phone, exam events, SCHEDULE 
   const instances = await findByMrn(request, BAHMNI.mrn);
   expect(instances).toHaveLength(1);
   const te = instances[0];
-  expect(attributeValue(te, MRN_ATTRIBUTE)).toBe("668466");
+  expect(attributeValue(te, MRN_ATTRIBUTE)).toBe("1057888-668466");
   // Policy end to end: Bahmni sends NO NAMES (the dump ships the name attributes
   // non-mandatory), but the phone is required — the SMS programme runs off it.
   expect(attributeValue(te, "RJxLa3nITB3")).toBe("0911556677");
@@ -328,19 +332,19 @@ test("a structurally invalid record gets a 400 listing the missing fields", asyn
 }) => {
   const invalid = JSON.parse(JSON.stringify(PULSETECH.record));
   delete invalid.pnt_mrn;
-  delete invalid.anc_followup[0].lmp_date;
+  delete invalid.anc_followup[0].ga;
 
   const response = await pushRecord(request, "pulsetech", PULSETECH_KEY, invalid);
   expect(response.status()).toBe(400);
   const error = await response.json();
   expect(error.missingFields).toContain("pnt_mrn");
-  expect(error.missingFields).toContain("anc_followup[0].lmp_date");
+  expect(error.missingFields).toContain("anc_followup[0].ga");
   expect(error.patient).toBeUndefined(); // the id itself is missing here
 });
 
 test("the 400 names the patient when the record carries an MRN", async ({ request }) => {
   const invalid = JSON.parse(JSON.stringify(PULSETECH.record));
-  delete invalid.anc_followup[0].lmp_date;
+  delete invalid.anc_followup[0].ga;
 
   const response = await pushRecord(request, "pulsetech", PULSETECH_KEY, invalid);
   expect(response.status()).toBe(400);

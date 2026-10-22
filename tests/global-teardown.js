@@ -19,6 +19,8 @@ const AUTH =
 const PROGRAM = "WSGAb5XwJ3Y";
 const MRN_ATTRIBUTE = "OYuDdqr2MvX";
 // Every MRN the suite can create (the PulseTech sample + the real Bahmni export).
+// Stored identities are facility-scoped: '<facility code>-<MRN>'.
+const FACILITY = "1057888";
 const TEST_MRNS = ["719685", "668462", "668463", "668464", "668465", "668466"];
 
 module.exports = async function globalTeardown() {
@@ -30,8 +32,8 @@ module.exports = async function globalTeardown() {
   // The fixed sample MRNs, plus the per-run women the appointment-lifecycle
   // test creates under the reserved 9900* prefix (matched with :like:).
   const filters = [
-    ...TEST_MRNS.map((mrn) => `${MRN_ATTRIBUTE}:eq:${mrn}`),
-    `${MRN_ATTRIBUTE}:like:9900`,
+    ...TEST_MRNS.map((mrn) => `${MRN_ATTRIBUTE}:eq:${FACILITY}-${mrn}`),
+    `${MRN_ATTRIBUTE}:like:${FACILITY}-9900`,
   ];
   const uids = [];
   for (const filter of filters) {

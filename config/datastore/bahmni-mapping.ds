@@ -17,7 +17,8 @@ local STAGE = {
   exam: 'JqW7c9HYjVr',     // ANC Examination (repeatable)
 };
 local ATTRIBUTE = {
-  mrn: 'OYuDdqr2MvX',          // Client MRN (unique — the identity key)
+  mrn: 'OYuDdqr2MvX',          // identity key, stored as '<facility code>-<MRN>'
+                               // (patientId is only unique within one Bahmni instance)
   dateOfBirth: 'Fgf497oYvSC',
   phone: 'RJxLa3nITB3',        // SMS phone number
 };
@@ -108,7 +109,7 @@ local scheduledEvents =
       trackedEntityType: TRACKED_ENTITY_TYPE,
       orgUnit: orgUnit,
       attributes: [
-        attribute(ATTRIBUTE.mrn, std.toString(rec.patientId)),
+        attribute(ATTRIBUTE.mrn, orgUnit + '-' + std.toString(rec.patientId)),
         attribute(ATTRIBUTE.dateOfBirth, rec.birthDate),
       ] + (
         // defensive: validation requires the phone, but never send a null value

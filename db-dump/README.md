@@ -11,10 +11,20 @@ the stages and the org unit codes documented in `docs/REFERENCE.md`. It must
 match the `DHIS2_IMAGE` version pinned in `.env`.
 
 The dump also carries the metadata state the EMR contracts assume. First
-Name and Father's Name are non-mandatory in the ANC programme, and the
-"Regular ANC / Scheduled visit?" data element is non-compulsory on the
-examination stage. Phone Number stays mandatory. For an instance that was not loaded from this dump,
-you can apply the attribute changes with `scripts/relax-mandatory-attributes.sh`.
+Name, Father's Name and Age/Date of birth are non-mandatory in the ANC
+programme (PulseTech exports age in years, not a DOB — it maps to the
+optional Age (years) attribute). On the Woman's Profile stage, Source of
+gestational age is non-compulsory (it is sent as LMP only when the export
+carries an LNMP; records without one have no source, never a guessed one), and the "Regular ANC / Scheduled visit?"
+data element is non-compulsory on the examination stage. Client MRN and SMS
+phone number stay mandatory, and Gestational age stays compulsory — the
+mediator rejects records that lack them. For an instance that was not loaded
+from this dump, apply the changes with `scripts/relax-mandatory-attributes.sh`.
+
+The ANC programme is only usable (Capture and imports alike) at org units it
+is assigned to. Assign each participating facility by code with
+`scripts/assign-program-facilities.sh <code> ...` and bake the state into the
+dump as below.
 
 The dump ships its own user accounts. Set `SEED_DHIS2_USER` and
 `SEED_DHIS2_PASSWORD` in `.env` accordingly.

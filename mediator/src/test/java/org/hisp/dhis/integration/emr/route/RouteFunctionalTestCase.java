@@ -61,9 +61,10 @@ public class RouteFunctionalTestCase extends AbstractIngestFunctionalTestCase {
         TestPayloads.readJson("mediator/src/test/resources/expected-pulsetech-tracker-payload.json"),
         OBJECT_MAPPER.readValue(trackerRequest.getBodyAsString(), Map.class));
 
-    // The idempotency lookup happened, scoped to this woman's MRN and the program.
+    // The idempotency lookup happened, scoped to this woman's facility-scoped MRN
+    // and the program (MRNs are only unique within one facility).
     LoggedRequest lookup = lookupRequests().get(0);
-    assertEquals("OYuDdqr2MvX:eq:719685", lookup.queryParameter("filter").firstValue());
+    assertEquals("OYuDdqr2MvX:eq:1057888-719685", lookup.queryParameter("filter").firstValue());
     assertEquals("WSGAb5XwJ3Y", lookup.queryParameter("program").firstValue());
     assertEquals("ACCESSIBLE", lookup.queryParameter("ouMode").firstValue());
     // ... requesting every field the merge matches on. Event `status` is load-bearing:
@@ -179,7 +180,7 @@ public class RouteFunctionalTestCase extends AbstractIngestFunctionalTestCase {
     // whole chain: fetch rules -> evaluate -> validation gate -> error response.
     Map<String, Object> record = TestPayloads.readJson("emr-mocks/pulsetech/anc-record.json");
     record.remove("pnt_mrn");
-    ((List<Map<String, Object>>) record.get("anc_followup")).get(0).remove("lmp_date");
+    ((List<Map<String, Object>>) record.get("anc_followup")).get(0).remove("ga");
 
     ResponseEntity<String> response =
         push("/api/pulsetech/anc-record", PULSETECH_KEY, TestPayloads.toJson(record));
@@ -190,7 +191,7 @@ public class RouteFunctionalTestCase extends AbstractIngestFunctionalTestCase {
     assertTrue(missing.contains("pnt_mrn"));
     // The id itself is what's missing here — so no patient reference in the body.
     assertFalse(error.containsKey("patient"));
-    assertTrue(missing.contains("anc_followup[0].lmp_date"));
+    assertTrue(missing.contains("anc_followup[0].ga"));
     assertEquals(0, trackerRequests().size());
   }
 

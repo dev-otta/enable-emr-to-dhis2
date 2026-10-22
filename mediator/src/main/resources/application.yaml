@@ -25,6 +25,9 @@ camel:
 spring:
   jmx:
     enabled: true
+  mvc:
+    async:
+      request-timeout: ${MEDIATOR_BATCH_RESPONSE_TIMEOUT_MILLIS:600000}
 
 management:
   server:

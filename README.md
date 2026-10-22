@@ -27,7 +27,8 @@ Two EMRs participate: PulseTech and [Bahmni](https://www.bahmni.org/). Each EMR 
 export over HTTPS to a small mediator built with [Apache Camel](https://camel.apache.org/). The mediator
 authenticates the sending site, validates the record, maps it to a DHIS2
 tracker payload, and then imports it to a connected DHIS2 instance. Imports are idempotent, meaning the mediator looks
-the woman up by her MRN (Medical Record Number) before every import and
+the woman up by her facility-scoped MRN (facility code + Medical Record
+Number) before every import and
 updates her if she already exists. An EMR can therefore safely push its full export
 on a regular basis. DHIS2 generates and owns all identifiers.
 
@@ -106,7 +107,8 @@ The flow is accomplished in a few steps:
    fields and the patient concerned.
 4. The valid record is mapped to a DHIS2 tracker payload. Facility org units
    are passed through as codes and resolved by DHIS2 at import.
-5. The mediator asks DHIS2 whether a woman with this record's MRN already
+5. The mediator asks DHIS2 whether a woman with this record's
+   facility-scoped MRN already
    exists in the programme. If she does, her existing identifiers are merged
    into the payload so the import updates instead of duplicating.
 6. The payload is imported synchronously through the DHIS2 tracker API, and

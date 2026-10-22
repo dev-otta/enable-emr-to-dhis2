@@ -83,10 +83,104 @@ public class PulseTechMappingDataSonnetTestCase extends AbstractDataSonnetTestCa
   }
 
   @Test
+  @SuppressWarnings("unchecked")
+  public void testRecordWithoutLmpEddMapsWithoutThoseDataValues() throws IOException {
+    // LMP/EDD are optional: absent values are left off the profile event entirely
+    // (never sent as null), and the GA source becomes Clinical instead of LMP.
+    Map<String, Object> sample = readEmrSample("pulsetech/anc-record.json");
+    for (Map<String, Object> followup :
+        (List<Map<String, Object>>) sample.get("anc_followup")) {
+      followup.remove("lmp_date");
+      followup.remove("edd");
+    }
+
+    Map<String, Object> actual = evaluate(mapping, sample);
+    List<Map<String, Object>> dataValues =
+        (List<Map<String, Object>>) events(actual).get(0).get("dataValues");
+    assertEquals(1, dataValues.size()); // gestational age only
+    assertFalse(dataValues.stream().anyMatch(d -> d.get("dataElement").equals("w4ky6EkVahL")));
+    assertFalse(dataValues.stream().anyMatch(d -> d.get("dataElement").equals("Ru01omP2WCQ")));
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  public void testGaSourceIsLmpOnlyWhenTheExportCarriesAnLnmp() throws IOException {
+    // With an LNMP the GA demonstrably derives from it (Akaki data: 92% within a
+    // week), so the source is reported as LMP. Without one the export has no
+    // source signal and none is sent — never guessed, never defaulted.
+    Map<String, Object> sample = readEmrSample("pulsetech/anc-record.json");
+    Map<String, Object> actual = evaluate(mapping, sample);
+    List<Map<String, Object>> dataValues =
+        (List<Map<String, Object>>) events(actual).get(0).get("dataValues");
+    assertEquals(
+        "LMP",
+        dataValues.stream()
+            .filter(d -> d.get("dataElement").equals("RPSgZF1i0hk"))
+            .findFirst()
+            .orElseThrow()
+            .get("value"));
+
+    for (Map<String, Object> followup :
+        (List<Map<String, Object>>) sample.get("anc_followup")) {
+      followup.remove("lmp_date");
+      followup.remove("edd");
+    }
+    List<Map<String, Object>> without =
+        (List<Map<String, Object>>) events(evaluate(mapping, sample)).get(0).get("dataValues");
+    assertFalse(without.stream().anyMatch(d -> d.get("dataElement").equals("RPSgZF1i0hk")));
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  public void testAgeInYearsIsMappedWhenThereIsNoDateOfBirth() throws IOException {
+    // PulseTech exports age, not DOB: the age lands on the Age (years) attribute
+    // and no date-of-birth attribute is sent (never null).
+    Map<String, Object> sample = readEmrSample("pulsetech/anc-record.json");
+    sample.remove("pnt_date_birth");
+    sample.put("pnt_age", 27);
+
+    Map<String, Object> actual = evaluate(mapping, sample);
+    List<Map<String, Object>> attributes =
+        (List<Map<String, Object>>) trackedEntity(actual).get("attributes");
+    assertFalse(attributes.stream().anyMatch(a -> a.get("attribute").equals("Fgf497oYvSC")));
+    assertEquals(
+        27,
+        attributes.stream()
+            .filter(a -> a.get("attribute").equals("B6TnnFMgmCk"))
+            .findFirst()
+            .orElseThrow()
+            .get("value"));
+  }
+
+  @Test
   public void testPayloadCarriesNoClientGeneratedUids() throws IOException {
     // DHIS2 owns identifier generation; the mediator only injects EXISTING UIDs
     // found by the lookup. The mapping itself must never invent any.
     assertCarriesNoClientGeneratedUids(evaluate(mapping, readEmrSample("pulsetech/anc-record.json")));
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  public void testIdentityIsScopedByFacilitySoMrnsCannotCollideAcrossSites() throws IOException {
+    // MRNs are only unique within one facility. The identity value is
+    // '<facility code>-<MRN>', so the same MRN from two sites never matches
+    // the same woman in DHIS2.
+    Map<String, Object> sample = readEmrSample("pulsetech/anc-record.json");
+    assertEquals("1057888-719685", identityValue(evaluate(mapping, sample)));
+
+    sample.put("facility_dhis2_org_unit_code", "9990001");
+    assertEquals("9990001-719685", identityValue(evaluate(mapping, sample)));
+  }
+
+  @SuppressWarnings("unchecked")
+  private String identityValue(Map<String, Object> actual) {
+    return (String)
+        ((List<Map<String, Object>>) trackedEntity(actual).get("attributes"))
+            .stream()
+                .filter(a -> a.get("attribute").equals("OYuDdqr2MvX"))
+                .findFirst()
+                .orElseThrow()
+                .get("value");
   }
 
   @Test

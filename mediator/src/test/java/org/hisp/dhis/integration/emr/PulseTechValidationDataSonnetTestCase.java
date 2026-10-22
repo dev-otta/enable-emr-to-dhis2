@@ -50,12 +50,37 @@ public class PulseTechValidationDataSonnetTestCase extends AbstractDataSonnetTes
     Map<String, Object> sample = readEmrSample("pulsetech/anc-record.json");
     sample.remove("pnt_mrn");
     sample.put("pnt_phone", "   "); // blank counts as missing
-    ((List<Map<String, Object>>) sample.get("anc_followup")).get(0).remove("lmp_date");
+    ((List<Map<String, Object>>) sample.get("anc_followup")).get(0).remove("ga");
 
     Map<String, Object> result = evaluate(rules, sample);
     assertEquals(false, result.get("valid"));
-    assertEquals(
-        List.of("pnt_mrn", "pnt_phone", "anc_followup[0].lmp_date"), missingFields(result));
+    assertEquals(List.of("pnt_mrn", "pnt_phone", "anc_followup[0].ga"), missingFields(result));
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  public void testLmpAndEddAreOptionalButGaIsNot() throws IOException {
+    // Real exports often lack LMP/EDD (Akaki: 60% of women) — they are mapped when
+    // present. GA stays mandatory: a contact that cannot be placed in the
+    // pregnancy is rejected rather than imported undatable.
+    Map<String, Object> sample = readEmrSample("pulsetech/anc-record.json");
+    for (Map<String, Object> followup :
+        (List<Map<String, Object>>) sample.get("anc_followup")) {
+      followup.remove("lmp_date");
+      followup.remove("edd");
+    }
+    assertEquals(true, evaluate(rules, sample).get("valid"));
+
+    ((List<Map<String, Object>>) sample.get("anc_followup")).get(0).remove("ga");
+    assertEquals(false, evaluate(rules, sample).get("valid"));
+  }
+
+  @Test
+  public void testDateOfBirthIsOptional() throws IOException {
+    // PulseTech exports age in years, not a DOB; a record without one is valid.
+    Map<String, Object> sample = readEmrSample("pulsetech/anc-record.json");
+    sample.remove("pnt_date_birth");
+    assertEquals(true, evaluate(rules, sample).get("valid"));
   }
 
   @Test

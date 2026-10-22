@@ -12,11 +12,13 @@ local STAGE = {
   exam: 'JqW7c9HYjVr',     // ANC Examination (repeatable)
 };
 local ATTRIBUTE = {
-  mrn: 'OYuDdqr2MvX',              // Client MRN (unique — the identity key)
+  mrn: 'OYuDdqr2MvX',              // identity key, stored as '<facility code>-<MRN>'
+                                   // (MRNs are only unique within one facility)
   firstName: 'sB1IHYu2xQT',        // optional
   fathersName: 'ZtQqOYot5ut',      // optional 
   grandfathersName: 'ENRjVGxVL6l', // optional
   dateOfBirth: 'Fgf497oYvSC',
+  ageYears: 'B6TnnFMgmCk',         // Age (years) — for exports that carry age, not DOB
   phone: 'RJxLa3nITB3',            // SMS phone number
 };
 local DATA_ELEMENT = {
@@ -30,8 +32,10 @@ local DATA_ELEMENT = {
 /* ---- helpers ------------------------------------------------------------- */
 local attribute(uid, value) = { attribute: uid, value: value };
 local dataValue(uid, value) = { dataElement: uid, value: value };
-// an attribute that is only included when the source sent a value
+// an attribute/data value that is only included when the source sent a value
 local optionalAttribute(uid, value) = if value == null then [] else [attribute(uid, value)];
+local optionalDataValue(uid, value) = if value == null then [] else [dataValue(uid, value)];
+local get(o, f) = if std.objectHas(o, f) then o[f] else null;
 
 /* "Visit 3" -> 3 (tolerates a bare number too) */
 local visitNo(raw) =
@@ -52,18 +56,23 @@ local first = followups[0];  // the registration visit anchors the enrollment
 /* ---- events ---------------------------------------------------------------- */
 /* captured contacts are COMPLETED, dated the day they happened (PulseTech is missing a
   scheduled-visit concept. For now, every event it sends is marked as completed). */
+// LMP/EDD are optional: sent when recorded, dropped when not. GA source is
+// 'LMP' when the export carries an LNMP (in the Akaki data, GA matches
+// weeks-since-LNMP for 92% of such rows within a week — it IS LMP-derived)
+// and omitted otherwise: without an LNMP the export carries no source signal,
+// and the mediator never guesses one.
+local lmp = get(first, 'lmp_date');
 local profileEvent = {
   programStage: STAGE.profile,
   orgUnit: orgUnit,
   occurredAt: first.followup_date,
   status: 'COMPLETED',
   completedAt: first.followup_date,
-  dataValues: [
-    dataValue(DATA_ELEMENT.lnmp, first.lmp_date),
-    dataValue(DATA_ELEMENT.edd, first.edd),
-    dataValue(DATA_ELEMENT.gestationalAge, std.parseInt(first.ga)),
-    dataValue(DATA_ELEMENT.gaSource, 'LMP'),
-  ],
+  dataValues:
+    optionalDataValue(DATA_ELEMENT.lnmp, lmp)
+    + optionalDataValue(DATA_ELEMENT.edd, get(first, 'edd'))
+    + [dataValue(DATA_ELEMENT.gestationalAge, std.parseInt(first.ga))]
+    + optionalDataValue(DATA_ELEMENT.gaSource, if lmp == null then null else 'LMP'),
 };
 
 local examEvent(f) = {
@@ -81,11 +90,11 @@ local examEvent(f) = {
     {
       trackedEntityType: TRACKED_ENTITY_TYPE,
       orgUnit: orgUnit,
-      attributes: [
-        attribute(ATTRIBUTE.mrn, rec.pnt_mrn),
-        attribute(ATTRIBUTE.dateOfBirth, rec.pnt_date_birth),
-        attribute(ATTRIBUTE.phone, rec.pnt_phone),
-      ]
+      attributes: [attribute(ATTRIBUTE.mrn, orgUnit + '-' + std.toString(rec.pnt_mrn))]
+      // DOB and age are optional: PulseTech exports age in years, not a DOB
+      + optionalAttribute(ATTRIBUTE.dateOfBirth, field('pnt_date_birth'))
+      + [attribute(ATTRIBUTE.phone, rec.pnt_phone)]
+      + optionalAttribute(ATTRIBUTE.ageYears, field('pnt_age'))
       // names are optional: mapped when the export includes them, dropped when not
       + optionalAttribute(ATTRIBUTE.firstName, field('pnt_fname'))
       + optionalAttribute(ATTRIBUTE.fathersName, field('pnt_mname'))

@@ -47,7 +47,7 @@ public final class Dhis2Environment {
           .withEnv("POSTGRES_DB", "dhis")
           .withEnv("POSTGRES_PASSWORD", "dhis")
           .withCopyFileToContainer(
-              MountableFile.forHostPath("../db-dump/db-dump.sql.gz"),
+              MountableFile.forHostPath("../db-dump/db-dump.sql.gz", 0644),
               "/docker-entrypoint-initdb.d/db-dump.sql.gz")
           // the init phase loads the dump, then postgres restarts -> ready appears twice
           .waitingFor(
@@ -58,7 +58,7 @@ public final class Dhis2Environment {
       new GenericContainer<>(DHIS2_IMAGE)
           .withNetwork(NETWORK)
           .withCopyFileToContainer(
-              MountableFile.forHostPath("../config/dhis2/dhis.conf"), "/opt/dhis2/dhis.conf")
+              MountableFile.forHostPath("../config/dhis2/dhis.conf", 0644), "/opt/dhis2/dhis.conf")
           .withExposedPorts(8080)
           .waitingFor(
               Wait.forHttp("/dhis-web-login/")

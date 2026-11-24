@@ -73,8 +73,10 @@ mediator:
 
 dhis2:
   api-url: ${DHIS2_API_URL:http://localhost:8080/api}
-  username: ${DHIS2_USERNAME:admin}
-  password: ${DHIS2_PASSWORD:district}
+  # No defaults on purpose: the mediator refuses to start without its own DHIS2
+  # account (Dhis2ClientConfig). Use the least-privilege user (docs/REFERENCE.md §6).
+  username: ${DHIS2_USERNAME:}
+  password: ${DHIS2_PASSWORD:}
   import:
     async: ${DHIS2_IMPORT_ASYNC:false}
     report-mode: ${DHIS2_IMPORT_REPORT_MODE:FULL}

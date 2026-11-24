@@ -174,7 +174,8 @@ not the file.
 | Variable | Default | Meaning |
 |---|---|---|
 | `MEDIATOR_API_KEY_<SOURCE>` | unset | setting a key enables the source; minimum 16 characters, unique per site |
-| `DHIS2_API_URL`, `DHIS2_USERNAME`, `DHIS2_PASSWORD` | the compose-internal DHIS2 | the mediator's DHIS2 account |
+| `DHIS2_API_URL` | the compose-internal DHIS2 | the DHIS2 API the mediator imports into |
+| `DHIS2_USERNAME`, `DHIS2_PASSWORD` | none, required | the mediator's DHIS2 account; the mediator refuses to start without them and logs a warning when the user is `admin` |
 | `MEDIATOR_MAX_REQUEST_BYTES` | 1 MiB | single-record requests above this get 413 |
 | `MEDIATOR_BATCH_MAX_REQUEST_BYTES` | 20 MiB | batch requests above this get 413 |
 | `MEDIATOR_BATCH_MAX_RECORDS` | 1000 | batches with more raw entries get 400 |

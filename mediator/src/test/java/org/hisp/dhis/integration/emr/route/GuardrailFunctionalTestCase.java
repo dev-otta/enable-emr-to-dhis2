@@ -5,6 +5,12 @@ import static org.hisp.dhis.integration.emr.support.TestPayloads.PULSETECH_KEY;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.ByteArrayInputStream;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import org.hisp.dhis.integration.emr.support.AbstractIngestFunctionalTestCase;
 import org.hisp.dhis.integration.emr.support.TestPayloads;
 import org.junit.jupiter.api.MethodOrderer;
@@ -12,12 +18,13 @@ import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.ResponseEntity;
 
 /**
  * Functional tests for the ingest guardrails, with the limits configured LOW so they trip:
- * request-size cap (413, before anything else runs), the batch entry cap (400) and the throttle
- * (429). Own application context because of the tightened limits; DHIS2 is the same shared stub.
+ * request-size cap (413, before anything else runs, also for chunked bodies that declare no
+ * length), the batch entry cap (400) and the throttle (429). Own application context because of the tightened limits; DHIS2 is the same shared stub.
  */
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
@@ -29,6 +36,8 @@ import org.springframework.http.ResponseEntity;
     })
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class GuardrailFunctionalTestCase extends AbstractIngestFunctionalTestCase {
+
+  @LocalServerPort private int port;
 
   @Test
   @Order(1)
@@ -43,6 +52,36 @@ public class GuardrailFunctionalTestCase extends AbstractIngestFunctionalTestCas
 
   @Test
   @Order(2)
+  void testOversizedChunkedRequestIsRejectedWith413() throws Exception {
+    // A chunked body declares no Content-Length, so only reading it can enforce the cap.
+    String oversized = "{\"pnt_mrn\":\"" + "9".repeat(4096) + "\"}";
+    HttpResponse<String> response = pushChunked("/api/pulsetech/anc-record", PULSETECH_KEY, oversized);
+    assertEquals(413, response.statusCode());
+    assertTrue(response.body().contains("Request too large"));
+  }
+
+  @Test
+  @Order(3)
+  void testChunkedRequestWithinTheLimitIsProcessed() throws Exception {
+    // The buffered body must reach the routes intact: the envelope gate parses it and
+    // applies the entry cap (2), which proves the JSON arrived whole. The gate runs
+    // before the batch throttle, so this consumes no throttle budget.
+    String batch = TestPayloads.read("emr-mocks/bahmni/anc-records-batch.json");
+    HttpResponse<String> response = pushChunked("/api/bahmni/anc-records", BAHMNI_KEY, batch);
+    assertEquals(400, response.statusCode());
+    assertTrue(response.body().contains("maximum of 2"));
+  }
+
+  @Test
+  @Order(4)
+  void testChunkedRequestWithoutKeyIsDeniedWithoutBuffering() throws Exception {
+    String oversized = "{\"pnt_mrn\":\"" + "9".repeat(4096) + "\"}";
+    HttpResponse<String> response = pushChunked("/api/pulsetech/anc-record", null, oversized);
+    assertEquals(403, response.statusCode());
+  }
+
+  @Test
+  @Order(5)
   void testBatchBeyondTheEntryCapIsRejectedWith400() {
     // The envelope gate runs before the batch throttle, before the envelope
     // expression, and before any entry is processed — an oversized file is
@@ -54,7 +93,7 @@ public class GuardrailFunctionalTestCase extends AbstractIngestFunctionalTestCas
   }
 
   @Test
-  @Order(3)
+  @Order(6)
   void testBurstBeyondTheThrottleIsRejectedWith429() {
     String record = TestPayloads.read("emr-mocks/pulsetech/anc-record.json");
     assertEquals(200, push("/api/pulsetech/anc-record", PULSETECH_KEY, record).getStatusCode().value());
@@ -63,5 +102,23 @@ public class GuardrailFunctionalTestCase extends AbstractIngestFunctionalTestCas
     ResponseEntity<String> third = push("/api/pulsetech/anc-record", PULSETECH_KEY, record);
     assertEquals(429, third.getStatusCode().value());
     assertTrue(third.getBody().contains("Too many requests"));
+  }
+
+  /** POSTs with chunked transfer encoding: the body comes from a stream of unknown length. */
+  private HttpResponse<String> pushChunked(String path, String apiKey, String body)
+      throws Exception {
+    HttpRequest.Builder request =
+        HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
+            .header("Content-Type", "application/json")
+            .POST(
+                HttpRequest.BodyPublishers.ofInputStream(
+                    () -> new ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8))));
+    if (apiKey != null) {
+      request.header("X-API-KEY", apiKey);
+    }
+    return HttpClient.newBuilder()
+        .version(HttpClient.Version.HTTP_1_1)
+        .build()
+        .send(request.build(), HttpResponse.BodyHandlers.ofString());
   }
 }

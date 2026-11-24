@@ -139,7 +139,9 @@ public class DefaultSecurityConfig {
             })
         .addFilterBefore(
             new ApiKeyAuthenticationFilter(enabledKeys), UsernamePasswordAuthenticationFilter.class)
-        .addFilterBefore(
+        // After the key check: an unknown key is refused before any body is read, and only
+        // authenticated chunked requests are buffered (RequestSizeLimitFilter).
+        .addFilterAfter(
             new RequestSizeLimitFilter(maxRequestBytes, batchMaxRequestBytes),
             ApiKeyAuthenticationFilter.class);
 

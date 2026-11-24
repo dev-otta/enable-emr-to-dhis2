@@ -260,9 +260,13 @@ yarn test:e2e:wipe               # same as above, but cleans the instance after 
 * The demo mediator terminates TLS with a self-signed certificate. A real
   deployment should mount a proper keystore or terminate TLS in a reverse
   proxy.
-* The mediator's DHIS2 account should be a least-privilege service account
-  with capture access limited to the participating org units, not a
-  superuser.
+* The mediator's DHIS2 account should be a least-privilege service account,
+  not a superuser. The templates in `config/dhis2/` give it capture and
+  search access to the whole org unit tree, so that any facility can import
+  without changing the user. Because the facility comes from the EMR
+  payload, this means a site's key can write data to any facility; see
+  [`docs/REFERENCE.md`](docs/REFERENCE.md) section 7 for the trade-off and
+  how to narrow it.
 * The datastore expressions control what the mediator imports, so their
   sharing must be locked down: DHIS2 creates datastore entries readable and
   writable by every user. `scripts/lock-datastore-sharing.sh` (also run by

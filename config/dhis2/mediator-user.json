@@ -4,6 +4,7 @@
   "firstName": "ENABLE",
   "surname": "Mediator",
   "userRoles": [{ "id": "Med1atorRol" }],
-  "organisationUnits": [{ "id": "ImspTQPwCqd" }],
+  "organisationUnits": [{ "id": "b3aCK1PTn5S" }],
+  "teiSearchOrganisationUnits": [{ "id": "b3aCK1PTn5S" }],
   "password": "REPLACE_WITH_STRONG_PASSWORD_FROM_ENV"
 }

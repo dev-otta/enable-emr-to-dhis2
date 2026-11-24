@@ -234,6 +234,13 @@ DHIS2 instance, which is the shape of a real deployment. The checklist:
 * The account must be able to search across all participating org units.
   The idempotency lookup uses `ouMode=ACCESSIBLE`, and an account with too
   narrow a search scope misses existing women and creates duplicates.
+* The templates in `config/dhis2/` (`mediator-role.json`,
+  `mediator-user.json`) assign the root org unit (Federal Ministry of Health,
+  `b3aCK1PTn5S`) for both data capture and search, so imports from any
+  facility in the tree are accepted without changing the user when a
+  facility joins. This is a deliberate trade-off; see the org unit scope
+  entry in section 7. Replace the password placeholder before posting the
+  user, and use the same value as `MEDIATOR_DHIS2_PASSWORD`.
 * Seed the datastore with `scripts/seed-datastore.sh` and verify the
   instance with `scripts/verify-metadata.sh`, which checks every identifier
   the mappings use plus the facility codes the EMRs will send.
@@ -279,6 +286,21 @@ stop rule is a fixed number of weeks after enrollment.
 Imported women have no value for the Age attribute. The Capture app's
 program rule fills it the first time a human edits the record. This is
 cosmetic; nothing reads the attribute.
+
+The mediator account can write to every org unit in the tree. Its capture
+scope is the root org unit (section 6), and the facility an import lands in
+is taken from the EMR payload (`facilityCode` or
+`facility_dhis2_org_unit_code`). A site's API key is not tied to particular
+facilities, so nothing in the mediator stops a misconfigured or compromised
+EMR from creating or updating women at a facility that is not its own; the
+only remaining check is that the org unit is assigned to the ANC programme,
+which in the ENABLE package is every org unit. To narrow it,
+assign the participating regions (for example Addis Ababa City
+Administration, `yY9BLUUegel`) or facilities as capture org units and keep
+the root as the search scope; a further step would be an allow-list of
+facility codes per source in the mediator. The search scope should stay at
+the root in every case, because a narrower one causes silent duplicates
+rather than failed imports.
 
 Identifier uniqueness across instances is settled: both mappings prefix
 the identity value with the facility code (section 3), so per-instance

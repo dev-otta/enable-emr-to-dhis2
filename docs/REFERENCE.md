@@ -206,7 +206,8 @@ Adding a source requires no mediator code:
 2. Write the three expressions in `config/datastore/`:
    `<source>-envelope.ds`, `<source>-validation.ds` and
    `<source>-mapping.ds`. Run `yarn mappings:pack` and re-seed the
-   datastore.
+   datastore. New keys are created with public read/write sharing, so lock
+   them down as part of the seed (see section 6).
 3. Add a sample export in `emr-mocks/<source>/` and golden-file tests.
 
 On the DHIS2 side, the facility's org unit must exist with the code the EMR
@@ -235,6 +236,22 @@ DHIS2 instance, which is the shape of a real deployment. The checklist:
 * Seed the datastore with `scripts/seed-datastore.sh` and verify the
   instance with `scripts/verify-metadata.sh`, which checks every identifier
   the mappings use plus the facility codes the EMRs will send.
+* Lock down sharing on the datastore entries. The envelope, validation and
+  mapping expressions decide what the mediator writes into the tracker, but
+  DHIS2 creates datastore entries with public read/write sharing, so by
+  default any logged-in user could rewrite a mapping. Set
+  `DATASTORE_READER_USERNAME` (the mediator's DHIS2 user) and optionally
+  `DATASTORE_EDITOR_GROUP` (a user group UID or name) when running
+  `scripts/seed-datastore.sh`, or run `scripts/lock-datastore-sharing.sh`
+  on its own. Afterwards each entry has no public access, the mediator user
+  can only read it, and the editor group can read and write it. Superusers
+  always bypass sharing. `CHECK_ONLY=1 scripts/lock-datastore-sharing.sh`
+  reports the current state without changing it and exits non-zero if any
+  entry is still public. Run the lock again whenever a new key is seeded:
+  updating an existing key keeps its sharing, but a newly created key
+  starts public again. If the mediator answers every push with a 502 after
+  the lockdown, check that the mediator user was granted read access: the
+  datastore then returns 403 to the mediator.
 * If the instance was not loaded from the shipped dump, apply the metadata
   changes the contracts assume: `scripts/relax-mandatory-attributes.sh`
   makes the name attributes non-mandatory, and the "Regular ANC / Scheduled

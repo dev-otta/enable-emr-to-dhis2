@@ -10,6 +10,11 @@
 # With no arguments, every source found in config/datastore/ is seeded.
 # Namespaces can be overridden with DATASTORE_VALIDATION_NAMESPACE /
 # DATASTORE_MAPPING_NAMESPACE (must match the mediator's configuration).
+#
+# Sharing: DHIS2 creates new datastore entries with PUBLIC read/write access.
+# Set DATASTORE_READER_USERNAME (the mediator's DHIS2 user) and optionally
+# DATASTORE_EDITOR_GROUP, and this script locks the entries down afterwards
+# with scripts/lock-datastore-sharing.sh (see docs/REFERENCE.md §6).
 set -euo pipefail
 
 : "${DHIS2_URL:?Set DHIS2_URL (e.g. https://host/dhis — no trailing /api)}"
@@ -48,3 +53,11 @@ for source in "${sources[@]}"; do
 done
 
 echo "Seeded: ${sources[*]}"
+
+if [ -n "${DATASTORE_READER_USERNAME:-}" ]; then
+  bash ./scripts/lock-datastore-sharing.sh "${sources[@]}"
+else
+  echo "WARNING: sharing not locked down. New datastore entries are readable and writable by"
+  echo "every DHIS2 user. Re-run with DATASTORE_READER_USERNAME set, or run"
+  echo "scripts/lock-datastore-sharing.sh (docs/REFERENCE.md §6)."
+fi

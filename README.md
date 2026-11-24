@@ -116,7 +116,9 @@ The flow is accomplished in a few steps:
 
 The envelope, validation and mapping expressions are fetched from the DHIS2
 datastore on each request. Editing them in the datastore changes the
-mediator's behaviour without a redeployment.
+mediator's behaviour without a redeployment. For the same reason, only the
+mediator (read) and the integration's maintainers (write) should have access
+to those entries; see [Security Considerations](#security-considerations).
 
 ### EMRs (PulseTech and Bahmni)
 
@@ -261,6 +263,12 @@ yarn test:e2e:wipe               # same as above, but cleans the instance after 
 * The mediator's DHIS2 account should be a least-privilege service account
   with capture access limited to the participating org units, not a
   superuser.
+* The datastore expressions control what the mediator imports, so their
+  sharing must be locked down: DHIS2 creates datastore entries readable and
+  writable by every user. `scripts/lock-datastore-sharing.sh` (also run by
+  `scripts/seed-datastore.sh` when `DATASTORE_READER_USERNAME` is set) removes
+  public access, gives the mediator's user read access and an optional editor
+  group write access. See [`docs/REFERENCE.md`](docs/REFERENCE.md) section 6.
 * The payloads contain personal data such as phone numbers and dates of
   birth. Request bodies and import reports are logged at DEBUG level. A privacy impact assessment should be carried out before connecting
   real facilities.

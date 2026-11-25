@@ -55,8 +55,20 @@ fi
 first_id() { grep -oE '"id" *: *"[A-Za-z][A-Za-z0-9]{10}"' | head -n 1 | grep -oE '[A-Za-z][A-Za-z0-9]{10}"$' | tr -d '"'; }
 public_access() { grep -oE '"publicAccess" *: *"[^"]*"' | head -n 1 | sed -E 's/.*"([^"]*)"$/\1/'; }
 
+top_level_id() {
+  local s prev
+  s=$(tr -d '\n')
+  s="${s#*\{}"; s="${s%\}*}"
+  while [[ "$s" == *[{}]* ]]; do
+    prev="$s"
+    s=$(sed -E 's/\{[^{}]*\}//g' <<< "$s")
+    [ "$s" = "$prev" ] && break
+  done
+  first_id <<< "$s"
+}
+
 entry_uid() { # namespace/key -> the entry's UID (empty when the key does not exist)
-  curl -sf -u "$auth" "${api}/dataStore/$1/metaData" | first_id || true
+  curl -sf -u "$auth" "${api}/dataStore/$1/metaData" | top_level_id || true
 }
 
 failures=0

@@ -1,7 +1,7 @@
 {
   "id": "Med1atorRol",
   "name": "ENABLE Mediator - tracker import",
-  "description": "Least-privilege role for the integration mediator. Avoid admin or metadata authorities. Write access to tracker data comes from sharing the necessary ANC program, its stages and the Person tracked entity type with this role (metadata read, data read + write); read access to the enable-emr-* datastore entries comes from scripts/lock-datastore-sharing.sh. F_UNCOMPLETE_EVENT lets re-pushes update events that are already COMPLETED.",
+  "description": "Least-privilege role for the integration mediator. Avoid admin or metadata authorities.",
   "authorities": [
     "F_TRACKED_ENTITY_INSTANCE_ADD",
     "F_TRACKED_ENTITY_INSTANCE_SEARCH",

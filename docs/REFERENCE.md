@@ -239,8 +239,14 @@ DHIS2 instance, which is the shape of a real deployment. The checklist:
   `b3aCK1PTn5S`) for both data capture and search, so imports from any
   facility in the tree are accepted without changing the user when a
   facility joins. This is a deliberate trade-off; see the org unit scope
-  entry in section 7. Replace the password placeholder before posting the
-  user, and use the same value as `MEDIATOR_DHIS2_PASSWORD`.
+  entry in section 7.
+* You can create the account manually, or by using the included `scripts/create-mediator-user.sh` script (`DHIS2_URL`,
+  `DHIS2_USER` and `DHIS2_PASSWORD` of a superuser, plus
+  `MEDIATOR_DHIS2_PASSWORD`, the same value as in the mediator's `.env`).
+  It checks that the template's org units exist, creates or updates the
+  role, creates the user, and shares the ANC programme, its two stages and
+  the Person tracked entity type with the user as metadata read and data
+  read + write. It finishes by logging in as the new user.
 * Seed the datastore with `scripts/seed-datastore.sh` and verify the
   instance with `scripts/verify-metadata.sh`, which checks every identifier
   the mappings use plus the facility codes the EMRs will send.
